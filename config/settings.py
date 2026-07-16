@@ -1,0 +1,57 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    app_env: str = "development"
+    app_host: str = "127.0.0.1"
+    app_port: int = 8000
+    web_origin: str = "http://localhost:5173"
+
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_chat_model: str = "gemma3:12b"
+    ollama_fallback_model: str = "llama3.2:latest"
+    ollama_embed_model: str = "nomic-embed-text"
+
+    intacct_help_start_url: str = (
+        "https://www.intacct.com/ia/docs/en_US/help_action/Intacct_basics/welcome.htm"
+    )
+    intacct_help_allowed_prefix: str = (
+        "https://www.intacct.com/ia/docs/en_US/help_action/"
+    )
+    crawl_delay_seconds: float = 0.25
+
+    data_dir: Path = Path("data")
+    help_cache_dir: Path = Path("data/help_xhtml")
+    vector_store_dir: Path = Path("data/vector_store")
+    runs_dir: Path = Path("data/runs")
+    output_dir: Path = Path("output")
+    payloads_dir: Path = Path("output/payloads")
+    videos_dir: Path = Path("output/videos")
+    published_dir: Path = Path("output/published")
+    log_level: str = "INFO"
+    higgsfield_api_key: str = ""
+
+    def ensure_runtime_directories(self) -> None:
+        for path in (
+            self.data_dir,
+            self.help_cache_dir,
+            self.vector_store_dir,
+            self.runs_dir,
+            self.output_dir,
+            self.payloads_dir,
+            self.videos_dir,
+            self.published_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    settings = Settings()
+    settings.ensure_runtime_directories()
+    return settings

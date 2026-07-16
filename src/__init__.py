@@ -1,0 +1,1 @@
+"""SI VidGen application package."""
