@@ -9,7 +9,7 @@ Living status for **SI VidGen**. Update whenever a phase/task moves.
 | **Overall status** | XHTML crawl/chunk/embed/Chroma path verified; awaiting Higgsfield account |
 | **Prototype posture** | Local venv · `gemma3:12b` / `llama3.2:latest` · `nomic-embed-text` · React+FastAPI · V0 payload export |
 | **Primary users** | Information developers, project managers |
-| **Prototype exit** | GitHub remote connected; initial verified push pending this work unit |
+| **Prototype exit** | Verified baseline pushed to GitHub `main` |
 
 ---
 
@@ -79,7 +79,7 @@ Still waiting on the operator: Higgsfield API access/docs for schema validation 
 | `npm audit` | 0 vulnerabilities |
 | Ollama models | `gemma3:12b`, `llama3.2:latest`, `nomic-embed-text`, `dolphin-mixtral:8x7b` (excluded by default) |
 | Live RAG smoke | 1 XHTML page → 1 chunk → Ollama embedding → Chroma → retrieval; pass |
-| Git | Remote connected to `Ben408/SI-VidGen`; initial push pending |
+| Git | `main` pushed to `Ben408/SI-VidGen` (`157bf9a`) |
 
 ---
 
@@ -91,7 +91,7 @@ Still waiting on the operator: Higgsfield API access/docs for schema validation 
 | Contract (LLM JSON) | Classifier + scriptgen | Not started |
 | Integration | XHTML fixtures → vector storage | Chroma upsert/query/source-replacement test present |
 | E2E | Orchestrator + UI API + fake LLM | API smoke test present (placeholder stages) |
-| CI (GitHub Actions) | Lint + tests on PR | Workflow ready; initial push pending |
+| CI (GitHub Actions) | Lint + tests on PR | Workflow pushed; GitHub status API temporarily returned HTTP 503 |
 
 ---
 
@@ -125,3 +125,4 @@ Still waiting on the operator: Higgsfield API access/docs for schema validation 
 | 2026-07-16 | Initial planning rewrite and D1–D12 confirmation |
 | 2026-07-16 | Phase 0 implementation: FastAPI + React shell, payload smoke path, docs, CI, tests, Ollama embed model |
 | 2026-07-16 | Phase 1 core: scoped XHTML crawler/cache, chunker, Ollama embeddings, Chroma, index CLI, live one-page retrieval verification |
+| 2026-07-16 | GitHub baseline pushed to private `Ben408/SI-VidGen` repository |

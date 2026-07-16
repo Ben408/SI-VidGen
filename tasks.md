@@ -22,7 +22,7 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 - [x] Add `.env.example` (`gemma3:12b` primary, `llama3.2:latest` fallback, planned local embed model, paths, optional Higgsfield key, log level)
 - [x] Add `requirements.txt` + `requirements-dev.txt`
 - [x] Confirm Python 3.11+ venv workflow in README
-- [ ] Add GitHub remote and push initial commit (operator creating repo)
+- [x] Add GitHub remote and push initial commit (`Ben408/SI-VidGen`)
 
 ### Task 0.2: Documentation skeleton
 - [x] `readme.md` — confirmed decisions D1–D12
