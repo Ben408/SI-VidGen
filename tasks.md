@@ -77,46 +77,50 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 ## Phase 2 — Issue classification (local LLM)
 
 ### Task 2.1: Classifier
-- [ ] Prompt templates (JSON-only)
-- [ ] Schema validation
-- [ ] Map issues → help topics
-- [ ] Fake-LLM contract tests; real Ollama optional local test
+- [x] Prompt templates (JSON-only)
+- [x] Schema validation
+- [x] Map issues → help topics
+- [x] Fake-LLM contract tests; real Ollama validation completed with `gemma3:12b`
 
 ### Task 2.2: Classify API
-- [ ] `POST /classify_issue` (or equivalent under orchestrated run)
-- [ ] Input validation + telemetry
+- [x] Classification stage under orchestrated run
+- [x] Input validation + telemetry
 
 ---
 
 ## Phase 3 — Retrieval pipeline
 
 ### Task 3.1: RAG retriever
-- [ ] Classification-aware query
-- [ ] Top-K + scores + low-confidence handling
-- [ ] Integration tests on XHTML fixtures
+- [x] Classification-aware query (`search_query`)
+- [x] Top-K + scores + low-confidence handling
+- [x] Unit/integration tests for retrieval mapping and empty/low-score failure
 
 ---
 
 ## Phase 4 — Script generation (Help Center–safe visuals)
 
 ### Task 4.1: Script generator
-- [ ] Help content → narration + scenes JSON
-- [ ] UI references; **no dependency on missing screenshots**
-- [ ] Prefer asset URLs/paths already present in Help Center / XHTML when available
-- [ ] Schema validation + one repair retry
+- [x] Help content → narration + scenes JSON
+- [x] UI references; **no dependency on missing screenshots**
+- [x] Prefer asset URLs/paths already present in Help Center / XHTML when available
+- [x] Schema validation + one repair retry + grounding checks
 
-### Task 4.2: Scene planner
-- [ ] Provider-ready scene list + branding defaults from config
+### Task 4.2: Scene planner / review artifacts
+- [x] Provider-ready scene list + branding defaults from config
+- [x] Grounded script JSON export + UI source/confidence review (no Higgsfield API calls)
+- [x] Help image library harvest (`python -m src.rag.build_image_library`) + `docs/image_library.md`
+- [x] Auto-bind library assets; visual coverage green/yellow/red in run + UI
 
 ---
 
 ## Phase 5 — Higgsfield payload (V0) then API (V0.1)
 
 ### Task 5.1: V0 payload export
-- [ ] Align payload schema with current Higgsfield API docs
-- [ ] `payload_builder` writes `output/payloads/{run_id}.json`
+- [~] Align payload schema with current Higgsfield API docs
+- [x] `payload_builder` writes `output/payloads/{run_id}.json`
+- [x] Explainer MCP/CLI package: `*-explainer.json`, `*-medias.json`, `*-prompt.txt` (local paths, max 14)
 - [ ] Schema validation tests (golden files)
-- [ ] UI: download / view payload
+- [x] UI: download / view payload + explainer package
 
 ### Task 5.2: V0.1 Higgsfield client
 - [ ] API wrapper using `HIGGSFIELD_API_KEY`
@@ -128,9 +132,11 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 ## Phase 6 — Review + local publishing
 
 ### Task 6.1: Review workflow (web UI)
-- [ ] Approve / reject / request changes
-- [ ] Versioning + audit log
-- [ ] In-UI progress during processing
+- [~] Approve implemented; reject / request changes remain
+- [x] Editable script versions + metadata-only edit/approval audit events
+- [x] Payload regeneration after each saved edit
+- [x] Default-off automatic-generation toggle with availability gate
+- [x] In-UI progress during processing
 
 ### Task 6.2: Local publish (V0 / V0.1)
 - [ ] Write approved artifacts to `output/published/`
@@ -151,48 +157,50 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 ## Phase 8 — Intake stubs + E2E
 
 ### Task 8.1: Orchestrator
-- [ ] Full path: intake → classify → RAG → script → payload [(→ Higgsfield)] → review
-- [ ] Logging, error codes, safe retries
+- [x] Full path: intake → classify → RAG → script → payload (Higgsfield generation deferred)
+- [x] Logging, error codes, safe retries
 
 ### Task 8.2: Web UI (primary)
-- [ ] Text entry box
-- [ ] Stage inspection, approve/reject, download payload/assets
-- [ ] Browser-agnostic operator flows
+- [x] Text entry box
+- [x] Stage inspection + editable script + approve + script/payload downloads
+- [x] Browser-agnostic operator flows
 
 ### Task 8.3: Stubbed intake connectors
 - [ ] MCP connection stub (interface + “not configured” behavior)
 - [ ] Structured file ingest stub (JSON/CSV of issues)
 
 ### Task 8.4: E2E tests
-- [ ] Fake LLM → assert payload file + run JSON + progress events
+- [x] Fake LLM → assert payload file + run JSON + progress events
+- [x] Failure path for weak retrieval evidence
+- [x] Edit → version → payload rebuild → approve/generate gate
 
 ---
 
 ## Phase 9 — Quality gates (required)
 
 ### Task 9.1: Comprehensive tests
-- [ ] Unit / contract / integration / e2e
+- [x] Unit / contract / integration / e2e (36 local tests)
 - [ ] Coverage tracking in CI
-- [ ] Regression fixtures for XHTML samples
+- [x] Regression fixtures for XHTML samples
 
 ### Task 9.2: Telemetry completeness
-- [ ] Fields per `docs/telemetry.md`
-- [ ] UI progress covered
-- [ ] Do not retain full issue text or retrieved help chunks
-- [ ] Secret redaction test
+- [x] Fields per `docs/telemetry.md`
+- [x] UI progress covered
+- [x] Do not retain full issue text or retrieved help chunks
+- [x] Secret redaction test
 
 ### Task 9.3: GitHub + CI/CD path
-- [ ] GitHub Actions: lint + tests on PR (no paid APIs)
-- [ ] Document **future full-cloud Vercel deployment** after hosted API/model/storage migration
-- [ ] **Prototype exit checklist:** repo ready for initial GitHub check-in
+- [x] GitHub Actions: lint + tests on PR (no paid APIs)
+- [x] Document **future full-cloud Vercel deployment** after hosted API/model/storage migration
+- [x] **Prototype exit checklist:** repo ready for initial GitHub check-in
 
 ---
 
 ## Phase 10 — Docs freeze & demo
 
 ### Task 10.1: Local demo
-- [ ] PowerShell one-command demo (venv + UI)
-- [ ] Sample issue → payload on disk
+- [x] PowerShell/BAT launcher (`start-si-vidgen.bat`)
+- [x] Sample issue → payload on disk (CSV import + library medias smoke)
 
 ### Task 10.2: Documentation completion
 - [ ] Operator guide (info developers / PMs)

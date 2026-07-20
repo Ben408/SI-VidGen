@@ -8,14 +8,20 @@ __pycache__/
 htmlcov/
 
 data/help_xhtml/
+data/help_assets/
 data/vector_store/
 data/runs/*.json
 !data/runs/.gitkeep
 
 output/*
 !output/payloads/
+!output/scripts/
 !output/videos/
 !output/published/
+output/**/*.json
+output/**/*.txt
+output/videos/**
+output/published/**
 !output/**/.gitkeep
 
 web/node_modules/

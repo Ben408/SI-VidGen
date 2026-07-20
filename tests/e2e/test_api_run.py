@@ -4,17 +4,25 @@ from fastapi.testclient import TestClient
 
 from config.settings import Settings
 from src.api.app import create_app
+from tests.fakes import FakePipelineLLM, FakeVectorStore
 
 
 def test_run_exports_payload_without_persisting_issue_text(tmp_path) -> None:
     settings = Settings(
         runs_dir=tmp_path / "runs",
         output_dir=tmp_path / "output",
+        scripts_dir=tmp_path / "output" / "scripts",
         payloads_dir=tmp_path / "output" / "payloads",
         videos_dir=tmp_path / "output" / "videos",
         published_dir=tmp_path / "output" / "published",
     )
-    client = TestClient(create_app(settings))
+    client = TestClient(
+        create_app(
+            settings,
+            llm=FakePipelineLLM(),
+            vector_store=FakeVectorStore(),
+        )
+    )
     secret_issue_text = "Sensitive issue content that must not appear in telemetry"
 
     response = client.post(
@@ -27,16 +35,22 @@ def test_run_exports_payload_without_persisting_issue_text(tmp_path) -> None:
 
     result = client.get(f"/api/runs/{run_id}")
     progress = client.get(f"/api/runs/{run_id}/progress")
+    script = client.get(f"/api/runs/{run_id}/script")
     payload = client.get(f"/api/runs/{run_id}/payload")
 
     assert result.json()["status"] == "completed"
+    assert result.json()["classification"]["model"] == "fake-local-model"
+    assert result.json()["sources"][0]["source_id"] == "chunk-1"
     assert progress.status_code == 200
     assert [event["stage"] for event in progress.json()][::2] == [
         "intake",
         "classify",
+        "retrieve",
         "script",
         "payload",
     ]
+    assert script.status_code == 200
+    assert script.json()["scenes"][0]["source_ids"] == ["chunk-1"]
     assert payload.status_code == 200
     assert payload.json()["script"]
 
@@ -44,3 +58,4 @@ def test_run_exports_payload_without_persisting_issue_text(tmp_path) -> None:
         json.loads((settings.runs_dir / f"{run_id}.json").read_text(encoding="utf-8"))
     )
     assert secret_issue_text not in telemetry
+    assert "Compare total debits and total credits" not in telemetry

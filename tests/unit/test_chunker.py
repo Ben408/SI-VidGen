@@ -27,6 +27,27 @@ def test_chunker_preserves_steps_headings_and_existing_assets() -> None:
     assert len({chunk.chunk_id for chunk in chunks}) == len(chunks)
 
 
+def test_chunker_assigns_unique_ids_for_repeated_text() -> None:
+    xhtml = """
+    <html><body><main>
+      <h1>Repeated guidance</h1>
+      <p>Same sentence for testing.</p>
+      <p>Same sentence for testing.</p>
+      <p>Same sentence for testing.</p>
+    </main></body></html>
+    """
+    chunks = chunk_xhtml(
+        xhtml,
+        source_url="https://www.intacct.com/ia/docs/en_US/help_action/repeat.htm",
+        source_hash="repeat-hash",
+        target_tokens=20,
+        max_tokens=40,
+    )
+
+    assert len(chunks) >= 2
+    assert len({chunk.chunk_id for chunk in chunks}) == len(chunks)
+
+
 def test_chunker_rejects_invalid_token_range() -> None:
     try:
         chunk_xhtml("<html />", "https://example", "hash", target_tokens=20, max_tokens=10)

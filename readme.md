@@ -88,7 +88,7 @@ Payload builder and API client are separate modules.
 **Confirmed.** Unit / contract / integration / e2e with local mocks. **Directory fully prepped for initial GitHub check-in** is required to exit the prototype phase (`.gitignore`, README, status, tests, CI stubs as appropriate).
 
 ### D11 — Screenshots / visuals
-**Confirmed.** **Avoid reliance on screenshots that are not already available from the Intacct Help Center.** Scene visuals should reference help-center assets or describe UI elements textually when no asset exists—never invent or require missing product captures.
+**Confirmed.** **Avoid reliance on screenshots that are not already available from the Intacct Help Center.** Scene visuals should reference help-center assets or describe UI elements textually when no asset exists—never invent or require missing product captures. V0.1 harvests a local Help image library (`data/help_assets/`) and attaches usable screenshots to the Higgsfield `video_explainer` medias package. See `docs/image_library.md`.
 
 ### D12 — Repo & CI/CD
 **Confirmed as highly desirable.** GitHub repository with GitHub Actions checks. Treat Vercel as a **future full cloud deployment** after the API, model inference, and corpus/vector storage have hosted replacements; do not create a split Vercel-UI/local-backend production architecture. Exact org/repo name TBD at first push.
@@ -187,6 +187,7 @@ flowchart TD
   /config
   /data
     /help_xhtml             # optional local crawl cache (gitignored)
+    /help_assets            # Help image library catalog + files (gitignored)
     /help_fixtures          # small committed samples for CI
     /samples
     /vector_store
@@ -243,6 +244,17 @@ Ollama chat model (≤ ~12B): feature area, intent, error type, help topics.
 
 ### Script + scene generation
 Local LLM produces narration, actions, visuals. Visual references must prefer **existing Help Center assets**; otherwise textual UI descriptions only.
+
+### Editable script review
+The generated script opens in the web UI before any video request is sent.
+Operators can edit the title, narration, scene actions, visuals, and voiceover.
+Each save creates a new versioned script and rebuilds the corresponding
+Higgsfield payload. Source IDs and Help assets remain grounding-validated.
+
+Manual review is the default. A default-off **Generate video automatically**
+toggle provides the future trusted path to skip manual approval after
+Higgsfield generation is configured. See `docs/sample_query.md` for the
+temporary grounded test case.
 
 ### Higgsfield payload (V0)
 Export a schema-valid API payload to `output/payloads/`. Example shape (exact schema to be aligned with current Higgsfield docs when keys are available):
@@ -377,6 +389,7 @@ UI must stream or poll equivalent progress for the active run.
 | `docs/architecture.md` | Deeper design |
 | `docs/telemetry.md` | Events, UI progress, privacy |
 | `docs/corpus_flare_xhtml.md` | Flare build drop, chunking, re-index cadence |
+| `docs/multilingual.md` | EN/FR/DE/ES-ES strategy and Phrase TMS decision |
 
 ---
 
@@ -401,11 +414,12 @@ Detailed tasks: [`tasks.md`](tasks.md). Module stubs: [`scaffold.md`](scaffold.m
 
 | Service | Prototype need | Notes |
 |---|---|---|
-| Ollama (local) | Required | `gemma3:12b` primary; `llama3.2:latest` fallback; embedding model still to install |
+| Ollama (local) | Required | `gemma3:12b` primary; `llama3.2:latest` fallback; `nomic-embed-text` embeddings |
 | Chroma (local) | Required | Prototype vector store |
 | Pinecone | Later | Deployment target; interface designed now |
 | Flare XHTML builds | Required | Authorized Intacct Support content |
-| Higgsfield | V0 payload schema; V0.1 live API | Keys via `.env` |
+| Higgsfield | V0 payload/schema review only; V0.1 live API later | Do not spend generation credits until payload review passes |
+| Phrase TMS | Decision pending | Recommended hybrid path in `docs/multilingual.md` (English authoring → Phrase → localized Help QA) |
 | GitHub / Actions | Required for prototype exit | Repo fully prepped |
 | Vercel | Later | Full cloud deployment after hosted API/model/storage migration |
 | Help center / LMS publish | Out of scope for V0/V0.1 | Local `output/` only |

@@ -4,49 +4,37 @@ Living status for **SI VidGen**. Update whenever a phase/task moves.
 
 | Field | Value |
 |---|---|
-| **Last updated** | 2026-07-16 |
-| **Current phase** | Phase 1 core complete → metadata enrichment / Phase 2 next |
-| **Overall status** | XHTML crawl/chunk/embed/Chroma path verified; awaiting Higgsfield account |
-| **Prototype posture** | Local venv · `gemma3:12b` / `llama3.2:latest` · `nomic-embed-text` · React+FastAPI · V0 payload export |
+| **Last updated** | 2026-07-20 |
+| **Current phase** | Help image library + Higgsfield explainer media packaging |
+| **Overall status** | V0 path is script/payload review only — no Higgsfield generation credits |
+| **Prototype posture** | Local venv · `gemma3:12b` / `llama3.2:latest` · `nomic-embed-text` · React+FastAPI · grounded script + Help image library + payload |
 | **Primary users** | Information developers, project managers |
-| **Prototype exit** | Verified baseline pushed to GitHub `main` |
+| **Prototype exit** | Verified baseline on GitHub; multilingual decision pending |
 
 ---
 
 ## Summary
 
-Phase 0 and the Phase 1 core are implemented locally:
+Implemented and verified:
 
-- Python 3.11 venv, FastAPI API, React/Vite UI
-- Deterministic smoke pipeline that writes a provisional Higgsfield payload
-- Metadata-only JSON run telemetry with UI progress polling
-- Docs stubs, GitHub Actions CI workflow, local `git init`
-- `nomic-embed-text` pulled into Ollama
-- Scoped, conditional XHTML crawler with local cache and content hashes
-- XHTML-aware heading/step chunker with existing asset references
-- Ollama embedding batches + persistent Chroma adapter + index CLI
-- One-page live crawl/index/retrieval smoke-tested successfully
+- Full English Help Center crawl/cache: **3,324 pages**
+- Full Chroma index: **8,015 chunks**, `complete: true`
+- Help image library harvest: **756 usable assets** downloaded (`data/help_assets/`), **361/3324** pages with usable visuals (~10.9%)
+- Validated Ollama classification (`gemma3:12b`)
+- Retrieval with relevance threshold and failure on weak evidence
+- Grounded script generation with source citations and library asset binding
+- Higgsfield `video_explainer` package export (`*-explainer.json`, `*-medias.json`, `*-prompt.txt`) with local media paths
+- Ollama structured-output schemas flattened for grammar compatibility
+- UI review of classification confidence, sources, script, visual coverage, and payload
+- Editable, versioned scripts with automatic payload regeneration
+- Explicit approval plus a default-off, capability-gated auto-generation path
+- Script generation limited to the top three retrieval sources with grounding repair
+- Rebuild-from-cache indexer (`--from-cache --reset-store`) after Chroma compaction recovery
+- **No Higgsfield API generation calls**
 
-Still waiting on the operator: Higgsfield API access/docs for schema validation and V0.1.
+Decision pending:
 
----
-
-## Confirmed product decisions (short)
-
-| ID | Decision |
-|---|---|
-| D1 | Crawl authorized published XHTML under `www.intacct.com/ia/docs/en_US/help_action/`; quarterly majors, Friday minors |
-| D2 | Ollama: `gemma3:12b` primary, `llama3.2:latest` fallback, `nomic-embed-text` embeddings |
-| D3 | Chroma now; Pinecone-ready interface for later |
-| D4 | V0 = valid Higgsfield **payload** to disk; V0.1 = Higgsfield **video API** |
-| D5 | **React + Vite** browser UI with **FastAPI** backend |
-| D6 | Text entry; MCP + structured file ingest **stubbed** |
-| D7 | V0/V0.1 write to **local** `output/` |
-| D8 | Python 3.11+ venv (`py -3.11`) |
-| D9 | Structured JSON + UI progress; metadata only, no full issue/help text |
-| D10 | Full test pyramid; GitHub-ready tree to exit prototype |
-| D11 | No reliance on screenshots **not** already in Help Center |
-| D12 | GitHub Actions now; Vercel as future full-cloud deployment |
+- Multilingual FR / DE / ES-ES strategy with Phrase TMS — recommended **Option C (Hybrid)** in `docs/multilingual.md`
 
 ---
 
@@ -55,66 +43,42 @@ Still waiting on the operator: Higgsfield API access/docs for schema validation 
 | Phase | Name | Status |
 |---|---|---|
 | 0 | Project foundation + GitHub prep | **Complete** |
-| 1 | RAG: Flare XHTML → Chroma | **Core complete**; module/task/UI metadata enrichment remains |
-| 2 | Issue classification (Ollama) | Not started |
-| 3 | Retrieval pipeline | Not started |
-| 4 | Script generation (Help Center–safe visuals) | Not started |
-| 5 | V0 payload export → V0.1 Higgsfield API | Payload path scaffolded; schema validation pending API docs |
-| 6 | Review + local publish + UI progress | Progress + download done; formal review later |
+| 1 | RAG: Flare XHTML → Chroma | **Complete for English** |
+| 2 | Issue classification (Ollama) | **Complete** |
+| 3 | Retrieval pipeline | **Complete** |
+| 4 | Script generation (Help Center–safe visuals) | **Complete for English V0** + Help image library |
+| 5 | V0 payload export → V0.1 Higgsfield API | Explainer media package ready; API generation blocked until review |
+| 6 | Review + local publish + UI progress | Edit/version/approve complete; reject/request-changes later |
 | 7 | Analytics + feedback | Stub only |
-| 8 | Intake stubs + E2E | Stubs + e2e smoke test present |
-| 9 | Quality gates + GitHub/Vercel path | Local lint/tests/CI workflow present |
-| 10 | Docs freeze & demo | Not started |
+| 8 | Intake stubs + E2E | Stubs + expanded e2e present |
+| 9 | Quality gates + GitHub/Vercel path | Local suite green; CI workflow present |
+| 10 | Docs freeze & demo | Multilingual decision doc ready for team review |
 
 ---
 
-## Verification (2026-07-16)
+## Verification
 
 | Check | Result |
 |---|---|
 | `ruff check .` | Pass |
-| `pytest --cov=src` | 11 passed · ~73% statement coverage on current modules; no warnings |
-| `npm run lint` | Pass |
-| `npm run build` | Pass |
-| `npm audit` | 0 vulnerabilities |
-| Ollama models | `gemma3:12b`, `llama3.2:latest`, `nomic-embed-text`, `dolphin-mixtral:8x7b` (excluded by default) |
-| Live RAG smoke | 1 XHTML page → 1 chunk → Ollama embedding → Chroma → retrieval; pass |
-| Git | `main` pushed to `Ben408/SI-VidGen` (`157bf9a`) |
+| `pytest` | 36 passed |
+| `npm run lint` / `npm run build` | Pass |
+| Live classify (`gemma3:12b`) | Pass |
+| Live classify → retrieve → script → payload | Pass (`scripts/live_pipeline_smoke.py`) |
+| Live sample → edit v2 → rebuild payload → approve | Pass (`scripts/live_review_workflow_smoke.py`) |
+| Live CSV-import sample → library medias → explainer package | Pass (`scripts/live_image_library_smoke.py`) |
+| Browser UI sample/edit/save/approve | Pass |
+| Full corpus index | **Complete** — 3,324 pages / 8,015 chunks |
+| Help image library | **Complete** — 756 usable assets / 361 pages |
+| Higgsfield API generation | Intentionally not called |
 
 ---
 
-## Test coverage (target vs actual)
+## Multilingual note
 
-| Layer | Target | Actual |
-|---|---|---|
-| Unit | Chunking, payload, schemas | Crawler boundary/cache, chunker, payload, Ollama-client tests present |
-| Contract (LLM JSON) | Classifier + scriptgen | Not started |
-| Integration | XHTML fixtures → vector storage | Chroma upsert/query/source-replacement test present |
-| E2E | Orchestrator + UI API + fake LLM | API smoke test present (placeholder stages) |
-| CI (GitHub Actions) | Lint + tests on PR | Workflow pushed; GitHub status API temporarily returned HTTP 503 |
+Intacct Help exists in English, French, German, and European Spanish. Phrase TMS is the localization system and has an MCP server.
 
----
-
-## Telemetry coverage (target vs actual)
-
-| Signal | Target | Actual |
-|---|---|---|
-| Structured JSON stage logs | All pipeline stages | Present for intake/classify/script/payload |
-| Run records (`data/runs/`) | Every orchestration | Present |
-| In-UI progress | Live stage feedback | Polling present |
-| Latencies / model ids | Classify, embed, script, payload/video | Latencies present; model ids when LLM stages land |
-| Review outcomes | approve / reject / revise | Not started |
-| Secret redaction checks | Automated test | Issue-text exclusion covered in e2e |
-
----
-
-## Blockers / risks
-
-| Item | Notes |
-|---|---|
-| Higgsfield schema | Align payload with live API docs when account/access is ready |
-| Corporate TLS | npm needs Windows root CA export; pip needs `PIP_CERT` set to that bundle |
-| Full corpus run | Not launched yet; one-page capped live validation passed |
+**Working recommendation:** Option C (Hybrid) — author/review in English, localize narration/scenes via Phrase TMS, QA against localized Help before non-English payload approval. See `docs/multilingual.md`.
 
 ---
 
@@ -122,7 +86,14 @@ Still waiting on the operator: Higgsfield API access/docs for schema validation 
 
 | Date | Change |
 |---|---|
-| 2026-07-16 | Initial planning rewrite and D1–D12 confirmation |
-| 2026-07-16 | Phase 0 implementation: FastAPI + React shell, payload smoke path, docs, CI, tests, Ollama embed model |
-| 2026-07-16 | Phase 1 core: scoped XHTML crawler/cache, chunker, Ollama embeddings, Chroma, index CLI, live one-page retrieval verification |
-| 2026-07-16 | GitHub baseline pushed to private `Ben408/SI-VidGen` repository |
+| 2026-07-20 | Help image library harvest + script/payload binding + explainer MCP package |
+| 2026-07-20 | Image-rich CSV journal-import sample (`docs/sample_query.md`) |
+| 2026-07-16 | GitHub baseline push |
+| 2026-07-16 | Classification + retrieval + grounded script/payload + review UI |
+| 2026-07-16 | Full English Help index completed (3,324 pages / 8,015 chunks) |
+| 2026-07-16 | Fixed Ollama nested schema grammar failures for script generation |
+| 2026-07-16 | Added `--from-cache --reset-store` recovery path for Chroma rebuild |
+| 2026-07-16 | Expanded tests + live pipeline smoke |
+| 2026-07-16 | Multilingual decision frame documented with hybrid recommendation |
+| 2026-07-16 | Editable script versions, approval, and safe auto-generation toggle |
+| 2026-07-16 | Grounded journal-reversal sample passed API and browser workflows |

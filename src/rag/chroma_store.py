@@ -24,11 +24,36 @@ class ChromaVectorStore:
             raise ValueError("Each chunk must have exactly one embedding")
         if not chunks:
             return
+        unique_chunks: list[HelpChunk] = []
+        unique_embeddings: list[list[float]] = []
+        seen: set[str] = set()
+        for ordinal, (chunk, embedding) in enumerate(
+            zip(chunks, embeddings, strict=True)
+        ):
+            chunk_id = chunk.chunk_id
+            if chunk_id in seen:
+                chunk_id = f"{chunk.chunk_id}:{ordinal}"
+            if chunk_id in seen:
+                continue
+            seen.add(chunk_id)
+            if chunk_id != chunk.chunk_id:
+                chunk = HelpChunk(
+                    chunk_id=chunk_id,
+                    text=chunk.text,
+                    source_url=chunk.source_url,
+                    source_hash=chunk.source_hash,
+                    title=chunk.title,
+                    heading_path=chunk.heading_path,
+                    asset_urls=chunk.asset_urls,
+                    token_estimate=chunk.token_estimate,
+                )
+            unique_chunks.append(chunk)
+            unique_embeddings.append(embedding)
         self.collection.upsert(
-            ids=[chunk.chunk_id for chunk in chunks],
-            documents=[chunk.text for chunk in chunks],
-            metadatas=[chunk.metadata() for chunk in chunks],
-            embeddings=embeddings,
+            ids=[chunk.chunk_id for chunk in unique_chunks],
+            documents=[chunk.text for chunk in unique_chunks],
+            metadatas=[chunk.metadata() for chunk in unique_chunks],
+            embeddings=unique_embeddings,
         )
 
     def replace_source(

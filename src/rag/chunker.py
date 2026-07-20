@@ -75,7 +75,7 @@ def chunk_xhtml(
             return
         text = "\n\n".join(current_parts).strip()
         heading_path = " > ".join(current_headings or active_headings)
-        identity = f"{source_url}\n{heading_path}\n{text}".encode()
+        identity = f"{source_url}\n{len(chunks)}\n{heading_path}\n{text}".encode()
         chunks.append(
             HelpChunk(
                 chunk_id=hashlib.sha256(identity).hexdigest(),

@@ -39,18 +39,24 @@ def test_extracts_only_scoped_html_links() -> None:
 def test_crawler_caches_pages_and_writes_manifest(tmp_path: Path) -> None:
     start = f"{ALLOWED}Intacct_basics/welcome.htm"
     child = f"{ALLOWED}General_Ledger/topic.htm"
+    dead = f"{ALLOWED}General_Ledger/missing.htm"
     pages = {
         start: (
             "<html><body><h1>Welcome</h1>"
-            '<a href="../General_Ledger/topic.htm">GL</a></body></html>'
+            '<a href="../General_Ledger/topic.htm">GL</a>'
+            '<a href="../General_Ledger/missing.htm">Missing</a>'
+            "</body></html>"
         ),
         child: "<html><body><h1>General Ledger</h1></body></html>",
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == dead:
+            return httpx.Response(404, request=request)
         return httpx.Response(
             200,
-            text=pages[str(request.url)],
+            text=pages[url],
             headers={"content-type": "application/xhtml+xml", "etag": '"fixture"'},
             request=request,
         )
@@ -60,5 +66,11 @@ def test_crawler_caches_pages_and_writes_manifest(tmp_path: Path) -> None:
     documents = crawler.crawl()
 
     assert [document.url for document in documents] == [start, child]
+    assert crawler.errors == []
+    assert crawler.skipped == [
+        {"url": dead, "error_type": "HTTPStatusError", "status_code": 404}
+    ]
     assert (tmp_path / "manifest.json").is_file()
+    manifest = (tmp_path / "manifest.json").read_text(encoding="utf-8")
+    assert '"complete": true' in manifest
     assert all((tmp_path / document.cache_path).is_file() for document in documents)

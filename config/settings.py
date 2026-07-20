@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "gemma3:12b"
     ollama_fallback_model: str = "llama3.2:latest"
     ollama_embed_model: str = "nomic-embed-text"
+    ollama_timeout_seconds: float = 180
+    rag_top_k: int = 6
+    rag_min_score: float = 0.2
 
     intacct_help_start_url: str = (
         "https://www.intacct.com/ia/docs/en_US/help_action/Intacct_basics/welcome.htm"
@@ -27,9 +30,11 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
     help_cache_dir: Path = Path("data/help_xhtml")
+    help_assets_dir: Path = Path("data/help_assets")
     vector_store_dir: Path = Path("data/vector_store")
     runs_dir: Path = Path("data/runs")
     output_dir: Path = Path("output")
+    scripts_dir: Path = Path("output/scripts")
     payloads_dir: Path = Path("output/payloads")
     videos_dir: Path = Path("output/videos")
     published_dir: Path = Path("output/published")
@@ -40,9 +45,12 @@ class Settings(BaseSettings):
         for path in (
             self.data_dir,
             self.help_cache_dir,
+            self.help_assets_dir,
+            self.help_assets_dir / "files",
             self.vector_store_dir,
             self.runs_dir,
             self.output_dir,
+            self.scripts_dir,
             self.payloads_dir,
             self.videos_dir,
             self.published_dir,
