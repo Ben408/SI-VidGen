@@ -180,14 +180,29 @@ def create_app(
         except RuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
+    @app.get("/api/runs/{run_id}/video")
+    def download_video(run_id: str) -> FileResponse:
+        result = orchestrator.get_result(run_id)
+        if result is None or result.generation_status != "ready" or not result.video_path:
+            raise HTTPException(status_code=404, detail="Video not available")
+        path = Path(result.video_path)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Video file not found")
+        return FileResponse(path, media_type="video/mp4", filename=path.name)
+
     @app.post("/api/runs/{run_id}/approve", response_model=RunResult)
-    def approve(run_id: str, action: ReviewAction) -> RunResult:
+    def approve(
+        run_id: str, action: ReviewAction, background_tasks: BackgroundTasks
+    ) -> RunResult:
         try:
-            return orchestrator.approve(run_id, action.generate_video)
+            result = orchestrator.approve(run_id, action.generate_video)
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except RuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        if action.generate_video and result.generation_status == "submitted":
+            background_tasks.add_task(orchestrator.finalize_generation, run_id)
+        return result
 
     return app
 

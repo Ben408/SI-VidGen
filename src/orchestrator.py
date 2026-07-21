@@ -1,6 +1,7 @@
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
+import json
 
 from config.settings import Settings
 from src.classifier.classify_issue import classify_issue
@@ -53,7 +54,9 @@ class Orchestrator:
         )
         self.vector_store = vector_store or ChromaVectorStore(settings.vector_store_dir)
         self.video_generator = video_generator or HiggsfieldClient(
-            settings.higgsfield_api_key
+            api_key=settings.higgsfield_api_key,
+            workspace_id=settings.higgsfield_workspace_id,
+            job_type=settings.higgsfield_job_type,
         )
         self.image_library = image_library
         if self.image_library is None and settings.help_assets_dir.joinpath(
@@ -133,6 +136,15 @@ class Orchestrator:
             self._write_result(result)
             if issue_input.auto_generate:
                 result = self.submit_generation(run_id, allow_auto=True)
+                if result.generation_status == "submitted":
+                    from threading import Thread
+
+                    Thread(
+                        target=self.finalize_generation,
+                        args=(run_id,),
+                        daemon=True,
+                        name=f"finalize-{run_id}",
+                    ).start()
             log_event("run_completed", run_id=run_id, payload_path=str(payload))
             return result
         except Exception as exc:
@@ -196,6 +208,7 @@ class Orchestrator:
                 "review_status": "draft",
                 "generation_status": "not_requested",
                 "generation_id": None,
+                "generation_job_ids": None,
                 "media_count": media_count,
                 "visual_coverage": "green" if media_count else coverage,
             }
@@ -239,22 +252,116 @@ class Orchestrator:
                     script,
                     self.image_library,
                     visual_coverage=result.visual_coverage,
+                ).model_copy(
+                    update={"explainer_package_path": result.explainer_package_path}
                 )
             )
             generation_id = response.get("id") or response.get("generation_id")
+            raw_job_ids = response.get("generation_job_ids")
+            job_ids = (
+                [str(item) for item in raw_job_ids]
+                if isinstance(raw_job_ids, list)
+                else None
+            )
             submitted = pending.model_copy(
                 update={
                     "generation_status": "submitted",
                     "generation_id": str(generation_id) if generation_id else None,
+                    "generation_job_ids": job_ids,
+                    "error_code": None,
+                    "error_detail": None,
                 }
             )
             self._write_result(submitted)
-            log_event("video_submitted", run_id=run_id)
+            log_event(
+                "video_submitted",
+                run_id=run_id,
+                generation_id=generation_id,
+                scene_count=len(job_ids or []),
+                mode=response.get("mode"),
+            )
             return submitted
-        except Exception:
-            failed = pending.model_copy(update={"generation_status": "failed"})
+        except Exception as exc:
+            failed = pending.model_copy(
+                update={
+                    "generation_status": "failed",
+                    "error_code": "VIDEO_SUBMIT_FAILED",
+                    "error_detail": str(exc)[:500],
+                }
+            )
             self._write_result(failed)
-            log_event("video_submit_failed", run_id=run_id)
+            log_event("video_submit_failed", run_id=run_id, error=str(exc)[:300])
+            return failed
+
+    def finalize_generation(self, run_id: str) -> RunResult:
+        """Poll Higgsfield until the job finishes, then download the video locally."""
+        result = self._require_completed(run_id)
+        if result.generation_status not in {"submitted", "pending"}:
+            return result
+        if not result.generation_id:
+            failed = result.model_copy(
+                update={
+                    "generation_status": "failed",
+                    "error_code": "VIDEO_MISSING_JOB_ID",
+                    "error_detail": "No Higgsfield generation id to poll",
+                }
+            )
+            self._write_result(failed)
+            return failed
+        try:
+            aspect = "16:9"
+            if result.explainer_package_path:
+                package_path = Path(result.explainer_package_path)
+                if package_path.is_file():
+                    try:
+                        package_data = json.loads(
+                            package_path.read_text(encoding="utf-8")
+                        )
+                        if isinstance(package_data, dict):
+                            ratio = package_data.get("aspect_ratio")
+                            if ratio in {"16:9", "9:16"}:
+                                aspect = ratio
+                    except (OSError, json.JSONDecodeError):
+                        pass
+            waited = self.video_generator.wait_for_result(
+                result.generation_id,
+                timeout_seconds=self.settings.higgsfield_wait_timeout_seconds,
+                scene_job_ids=result.generation_job_ids,
+                aspect_ratio=aspect,
+            )
+            source_url = waited.get("result_url")
+            if not isinstance(source_url, str) or not source_url.startswith("http"):
+                raise RuntimeError(f"No result URL in wait response: {waited}")
+            destination = self.settings.videos_dir / f"{run_id}.mp4"
+            path = self.video_generator.download_video(source_url, destination)
+            stitch_id = waited.get("id")
+            ready = result.model_copy(
+                update={
+                    "generation_status": "ready",
+                    "generation_id": (
+                        str(stitch_id)
+                        if isinstance(stitch_id, str) and stitch_id
+                        else result.generation_id
+                    ),
+                    "video_path": str(path),
+                    "video_url": source_url,
+                    "error_code": None,
+                    "error_detail": None,
+                }
+            )
+            self._write_result(ready)
+            log_event("video_ready", run_id=run_id, video_path=str(path))
+            return ready
+        except Exception as exc:
+            failed = result.model_copy(
+                update={
+                    "generation_status": "failed",
+                    "error_code": "VIDEO_WAIT_FAILED",
+                    "error_detail": str(exc)[:500],
+                }
+            )
+            self._write_result(failed)
+            log_event("video_wait_failed", run_id=run_id, error=str(exc)[:300])
             return failed
 
     def generation_available(self) -> bool:

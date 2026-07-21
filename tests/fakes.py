@@ -98,6 +98,9 @@ class FakeVideoGenerator:
     def __init__(self, *, configured: bool = True) -> None:
         self._configured = configured
         self.payloads = []
+        self.waited: list[str] = []
+        self.downloads: list[tuple[str, object]] = []
+        self.wait_kwargs: list[dict] = []
 
     @property
     def configured(self) -> bool:
@@ -105,4 +108,59 @@ class FakeVideoGenerator:
 
     def generate(self, payload):
         self.payloads.append(payload)
-        return {"id": "video-test-1"}
+        scene_count = max(1, len(payload.scenes or []))
+        if scene_count >= 2:
+            job_ids = [f"video-test-{index}" for index in range(1, scene_count + 1)]
+            return {
+                "id": job_ids[0],
+                "generation_id": job_ids[0],
+                "generation_job_ids": job_ids,
+                "mode": "scene_chunked",
+                "aspect_ratio": "16:9",
+                "scene_count": scene_count,
+            }
+        return {
+            "id": "video-test-1",
+            "generation_id": "video-test-1",
+            "generation_job_ids": ["video-test-1"],
+            "mode": "single",
+            "aspect_ratio": "16:9",
+            "scene_count": 1,
+        }
+
+    def wait_for_result(
+        self,
+        generation_id: str,
+        *,
+        timeout_seconds: int = 600,
+        scene_job_ids: list[str] | None = None,
+        aspect_ratio: str = "16:9",
+    ):
+        self.waited.append(generation_id)
+        self.wait_kwargs.append(
+            {
+                "timeout_seconds": timeout_seconds,
+                "scene_job_ids": scene_job_ids,
+                "aspect_ratio": aspect_ratio,
+            }
+        )
+        stitch_id = (
+            "video-stitch-1"
+            if scene_job_ids and len(scene_job_ids) >= 2
+            else generation_id
+        )
+        return {
+            "id": stitch_id,
+            "result_url": "https://example.com/videos/test.mp4",
+            "scene_job_ids": scene_job_ids or [generation_id],
+            "mode": "scene_chunked" if scene_job_ids and len(scene_job_ids) >= 2 else "single",
+        }
+
+    def download_video(self, source_url: str, destination):
+        from pathlib import Path
+
+        path = Path(destination)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"fake-mp4")
+        self.downloads.append((source_url, path))
+        return path

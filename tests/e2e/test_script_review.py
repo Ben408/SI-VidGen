@@ -73,6 +73,12 @@ def test_edit_regenerates_versioned_script_and_payload_then_approves(tmp_path) -
     assert approval.json()["generation_id"] == "video-test-1"
     assert generator.payloads[0].script == edit["narration"]
 
+    ready = client.get(f"/api/runs/{run_id}")
+    assert ready.json()["generation_status"] == "ready"
+    assert ready.json()["video_path"]
+    assert client.get(f"/api/runs/{run_id}/video").status_code == 200
+    assert generator.waited == ["video-test-1"]
+
 
 def test_edit_rejects_unknown_grounding_source(tmp_path) -> None:
     client = make_client(tmp_path, FakeVideoGenerator())
@@ -104,8 +110,17 @@ def test_auto_generate_is_default_off_and_can_bypass_manual_approval(tmp_path) -
     assert generator.payloads == []
 
     automatic_run = create_completed_run(client, auto_generate=True)
-    automatic = client.get(f"/api/runs/{automatic_run}").json()
+    automatic = None
+    for _ in range(50):
+        automatic = client.get(f"/api/runs/{automatic_run}").json()
+        if automatic["generation_status"] in {"ready", "failed"}:
+            break
+        import time
+
+        time.sleep(0.05)
+    assert automatic is not None
     assert automatic["auto_generate"] is True
     assert automatic["review_status"] == "approved"
-    assert automatic["generation_status"] == "submitted"
+    assert automatic["generation_status"] == "ready"
     assert len(generator.payloads) == 1
+    assert automatic["video_path"]

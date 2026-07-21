@@ -127,9 +127,17 @@ class RunResult(BaseModel):
     review_status: Literal["not_ready", "draft", "approved"] = "not_ready"
     auto_generate: bool = False
     generation_status: Literal[
-        "not_requested", "pending", "submitted", "failed", "unavailable"
+        "not_requested",
+        "pending",
+        "submitted",
+        "ready",
+        "failed",
+        "unavailable",
     ] = "not_requested"
     generation_id: str | None = None
+    generation_job_ids: list[str] | None = None
+    video_path: str | None = None
+    video_url: str | None = None
     classification: Classification | None = None
     sources: list[SourceReference] = Field(default_factory=list)
     visual_coverage: Literal["green", "yellow", "red"] = "red"

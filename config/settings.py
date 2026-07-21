@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     published_dir: Path = Path("output/published")
     log_level: str = "INFO"
     higgsfield_api_key: str = ""
+    higgsfield_workspace_id: str = ""
+    higgsfield_job_type: str = "gemini_omni"
+    higgsfield_wait_timeout_seconds: int = 600
 
     def ensure_runtime_directories(self) -> None:
         for path in (

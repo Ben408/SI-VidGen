@@ -32,19 +32,13 @@ Primary sources:
 - `visual_coverage` is **green** when at least one media file is attached
 - Approval does not spend Higgsfield credits unless generation is explicitly requested
 
-## Higgsfield MCP / CLI handoff
+## Higgsfield generation
 
-After a successful run, use the written files (no credit spend required to validate packaging):
+With `higgsfield auth login` completed, **Approve & send** uploads attached Help screenshots through Higgsfield MCP (`gemini_omni`) and polls until a local MP4 is ready under `output/videos/`.
 
-```bash
-higgsfield generate create video_explainer \
-  --prompt @<run>-v1-prompt.txt \
-  --medias @<run>-v1-medias.json \
-  --duration <from explainer.json> \
-  --aspect_ratio 16:9
-```
+**Account gate:** some Plus/trial logins still return `only_mcp_usage_on_trial_is_available` for real generation when authenticated via the CLI OAuth token (upload + cost preflight may work). In that case generation must use Higgsfield’s official MCP connector OAuth, or API/CLI access must be unlocked on the plan ([mcp-credits](https://higgsfield.ai/mcp-credits)).
 
-Do **not** select a restyling preset that replaces Intacct UI. Attached Help screenshots are authoritative.
+Packaging-only validation (no credits): inspect the written explainer files under `output/payloads/`. Do **not** restyle Intacct UI—Help screenshots are authoritative.
 
 ## Earlier sample (text-only visuals)
 
