@@ -2,6 +2,7 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 import json
+import shutil
 
 from config.settings import Settings
 from src.classifier.classify_issue import classify_issue
@@ -22,7 +23,8 @@ from src.scriptgen.script_writer import read_script_model, write_script
 from src.telemetry.logging import log_event, stage
 from src.telemetry.progress import ProgressTracker
 from src.telemetry.run_store import JsonRunStore
-from src.video.higgsfield_client import HiggsfieldClient, VideoGenerator
+from src.video.factory import create_video_generator
+from src.video.higgsfield_client import VideoGenerator
 from src.video.payload_builder import (
     build_explainer_package,
     build_higgsfield_payload,
@@ -53,11 +55,7 @@ class Orchestrator:
             timeout_seconds=settings.ollama_timeout_seconds,
         )
         self.vector_store = vector_store or ChromaVectorStore(settings.vector_store_dir)
-        self.video_generator = video_generator or HiggsfieldClient(
-            api_key=settings.higgsfield_api_key,
-            workspace_id=settings.higgsfield_workspace_id,
-            job_type=settings.higgsfield_job_type,
-        )
+        self.video_generator = video_generator or create_video_generator(settings)
         self.image_library = image_library
         if self.image_library is None and settings.help_assets_dir.joinpath(
             "catalog.json"
@@ -294,7 +292,7 @@ class Orchestrator:
             return failed
 
     def finalize_generation(self, run_id: str) -> RunResult:
-        """Poll Higgsfield until the job finishes, then download the video locally."""
+        """Wait for generation (cloud or local), then place the MP4 under videos_dir."""
         result = self._require_completed(run_id)
         if result.generation_status not in {"submitted", "pending"}:
             return result
@@ -303,7 +301,7 @@ class Orchestrator:
                 update={
                     "generation_status": "failed",
                     "error_code": "VIDEO_MISSING_JOB_ID",
-                    "error_detail": "No Higgsfield generation id to poll",
+                    "error_detail": "No generation id to poll",
                 }
             )
             self._write_result(failed)
@@ -329,12 +327,12 @@ class Orchestrator:
                 scene_job_ids=result.generation_job_ids,
                 aspect_ratio=aspect,
             )
-            source_url = waited.get("result_url")
-            if not isinstance(source_url, str) or not source_url.startswith("http"):
-                raise RuntimeError(f"No result URL in wait response: {waited}")
             destination = self.settings.videos_dir / f"{run_id}.mp4"
-            path = self.video_generator.download_video(source_url, destination)
+            path = self._materialize_video(waited, destination)
             stitch_id = waited.get("id")
+            video_url = waited.get("result_url")
+            if not isinstance(video_url, str) or not video_url.startswith("http"):
+                video_url = None
             ready = result.model_copy(
                 update={
                     "generation_status": "ready",
@@ -344,7 +342,7 @@ class Orchestrator:
                         else result.generation_id
                     ),
                     "video_path": str(path),
-                    "video_url": source_url,
+                    "video_url": video_url,
                     "error_code": None,
                     "error_detail": None,
                 }
@@ -363,6 +361,23 @@ class Orchestrator:
             self._write_result(failed)
             log_event("video_wait_failed", run_id=run_id, error=str(exc)[:300])
             return failed
+
+    def _materialize_video(
+        self, waited: dict[str, object], destination: Path
+    ) -> Path:
+        local_path = waited.get("local_path")
+        if isinstance(local_path, str) and Path(local_path).is_file():
+            source = Path(local_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source.resolve() != destination.resolve():
+                shutil.copy2(source, destination)
+            return destination
+        source_url = waited.get("result_url")
+        if isinstance(source_url, str) and source_url.startswith("http"):
+            return self.video_generator.download_video(source_url, destination)
+        if isinstance(source_url, str):
+            return self.video_generator.download_video(source_url, destination)
+        raise RuntimeError(f"No local path or result URL in wait response: {waited}")
 
     def generation_available(self) -> bool:
         return self.video_generator.configured

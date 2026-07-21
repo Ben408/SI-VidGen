@@ -113,7 +113,11 @@ function App() {
     fetch("/api/capabilities")
       .then((response) => response.json())
       .then((capabilities) => {
-        setGenerationAvailable(Boolean(capabilities.higgsfield_generation));
+        setGenerationAvailable(
+          Boolean(
+            capabilities.video_generation ?? capabilities.higgsfield_generation
+          )
+        );
       })
       .catch(() => setGenerationAvailable(false));
   }, []);
@@ -361,8 +365,8 @@ function App() {
                   <strong>Generate video automatically</strong>
                   <small>
                     {generationAvailable
-                      ? "Skip manual review and send a valid draft directly to Higgsfield."
-                      : "Available after the Higgsfield API is configured."}
+                      ? "Skip manual review and send a valid draft directly to video generation."
+                      : "Available after a video backend is configured."}
                   </small>
                 </span>
               </label>
@@ -623,7 +627,7 @@ function App() {
                       onClick={() => approveScript(true)}
                       disabled={saving || !generationAvailable}
                     >
-                      Approve &amp; send to Higgsfield
+                      Approve &amp; generate video
                       <ArrowIcon />
                     </button>
                   </div>
@@ -632,7 +636,7 @@ function App() {
                     <div className={`generation-status ${run.generation_status}`}>
                       {run.generation_status === "submitted" && (
                         <p>
-                          Submitted to Higgsfield successfully
+                          Submitted successfully
                           {run.generation_job_ids && run.generation_job_ids.length > 1
                             ? ` · ${run.generation_job_ids.length} scene clips`
                             : ""}
@@ -641,7 +645,7 @@ function App() {
                         </p>
                       )}
                       {run.generation_status === "pending" && (
-                        <p>Submitting to Higgsfield…</p>
+                        <p>Submitting video generation…</p>
                       )}
                       {run.generation_status === "ready" && (
                         <p>
@@ -662,9 +666,8 @@ function App() {
                       )}
                       {run.generation_status === "unavailable" && (
                         <p>
-                          Higgsfield generation is unavailable. Run
-                          `higgsfield auth login`, select a workspace, then
-                          restart the app.
+                          Video generation is unavailable. Check VIDEO_BACKEND /
+                          local compositor dependencies, or Higgsfield auth.
                         </p>
                       )}
                       {run.generation_status === "ready" && (
@@ -704,10 +707,10 @@ function App() {
               </div>
               <p className="credit-note">
                 {run.generation_status === "ready"
-                  ? "Video downloaded from Higgsfield to your local output/videos folder."
+                  ? "Video written to your local output/videos folder (Help screenshots preserved)."
                   : run.generation_status === "submitted" ||
                       run.generation_status === "pending"
-                    ? "Generation is in progress on Higgsfield. This page will update when the file is ready."
+                    ? "Generation is in progress. This page will update when the file is ready."
                     : "No video request has been sent. Saving an edit rebuilds the payload automatically."}
               </p>
             </div>

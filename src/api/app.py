@@ -59,8 +59,12 @@ def create_app(
         return {"status": "ok", "version": app.version}
 
     @app.get("/api/capabilities")
-    def capabilities() -> dict[str, bool]:
-        return {"higgsfield_generation": orchestrator.generation_available()}
+    def capabilities() -> dict[str, bool | str]:
+        return {
+            "higgsfield_generation": orchestrator.generation_available(),
+            "video_generation": orchestrator.generation_available(),
+            "video_backend": settings.video_backend,
+        }
 
     @app.post("/api/runs", status_code=202)
     def create_run(issue: IssueInput, background_tasks: BackgroundTasks) -> RunResult:

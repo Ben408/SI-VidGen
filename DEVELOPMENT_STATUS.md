@@ -86,6 +86,7 @@ Intacct Help exists in English, French, German, and European Spanish. Phrase TMS
 
 | Date | Change |
 |---|---|
+| 2026-07-20 | Local screenshot compositor default (Ken Burns + TTS); Higgsfield optional |
 | 2026-07-20 | Higgsfield CLI submit/wait/download (`gemini_omni`) + UI ready/local video link |
 | 2026-07-20 | Help image library harvest + script/payload binding + explainer MCP package |
 | 2026-07-20 | Image-rich CSV journal-import sample (`docs/sample_query.md`) |

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     videos_dir: Path = Path("output/videos")
     published_dir: Path = Path("output/published")
     log_level: str = "INFO"
+    video_backend: str = "local_compositor"
+    local_compositor_tts: bool = True
     higgsfield_api_key: str = ""
     higgsfield_workspace_id: str = ""
     higgsfield_job_type: str = "gemini_omni"
@@ -52,6 +54,7 @@ class Settings(BaseSettings):
             self.help_assets_dir / "files",
             self.vector_store_dir,
             self.runs_dir,
+            self.data_dir / "compositor_jobs",
             self.output_dir,
             self.scripts_dir,
             self.payloads_dir,
