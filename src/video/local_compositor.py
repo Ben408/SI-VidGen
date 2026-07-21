@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import shutil
 import subprocess
 import wave
@@ -11,9 +10,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from src.models import HiggsfieldExplainerPackage, HiggsfieldPayload, Scene
+from src.models import HiggsfieldExplainerPackage, HiggsfieldPayload
 from src.video.higgsfield_client import (
-    images_for_scene,
     plan_scene_clips,
 )
 
@@ -58,8 +56,8 @@ class LocalCompositorVideoGenerator:
         if self._configured_cache is not None:
             return self._configured_cache
         try:
-            from PIL import Image  # noqa: F401
             import imageio_ffmpeg  # noqa: F401
+            from PIL import Image  # noqa: F401
 
             self._configured_cache = True
         except ImportError:

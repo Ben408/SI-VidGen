@@ -1,8 +1,8 @@
+import json
+import shutil
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
-import json
-import shutil
 
 from config.settings import Settings
 from src.classifier.classify_issue import classify_issue

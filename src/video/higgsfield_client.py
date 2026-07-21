@@ -580,9 +580,7 @@ def _tool_is_error(payload: dict[str, object]) -> bool:
     if result.get("isError"):
         return True
     structured = result.get("structuredContent")
-    if isinstance(structured, dict) and structured.get("error"):
-        return True
-    return False
+    return bool(isinstance(structured, dict) and structured.get("error"))
 
 
 def _tool_error_text(payload: dict[str, object]) -> str:

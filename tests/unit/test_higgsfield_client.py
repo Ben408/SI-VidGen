@@ -69,10 +69,14 @@ def test_uuid_shape() -> None:
 
 
 def test_detects_structured_error_without_is_error_flag() -> None:
+    trial_error = (
+        "gemini_omni backend request failed (403): "
+        "only_mcp_usage_on_trial_is_available"
+    )
     payload = {
         "result": {
             "structuredContent": {
-                "error": "gemini_omni backend request failed (403): only_mcp_usage_on_trial_is_available",
+                "error": trial_error,
                 "request_id": "24bae836-2c4a-48e0-89b6-49fcc0b21612",
             }
         }
