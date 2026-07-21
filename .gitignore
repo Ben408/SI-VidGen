@@ -12,6 +12,7 @@ data/help_assets/
 data/vector_store/
 data/runs/*.json
 !data/runs/.gitkeep
+data/compositor_jobs/
 
 output/*
 !output/payloads/
