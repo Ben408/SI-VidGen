@@ -18,4 +18,6 @@ def create_video_generator(settings: Settings) -> VideoGenerator:
     return LocalCompositorVideoGenerator(
         jobs_dir=settings.data_dir / "compositor_jobs",
         enable_tts=settings.local_compositor_tts,
+        tts_voice=settings.local_compositor_voice,
+        tts_rate=settings.local_compositor_tts_rate,
     )

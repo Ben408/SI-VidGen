@@ -21,8 +21,9 @@ FPS = 24
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
 MIN_SCENE_SECONDS = 5.0
-MAX_SCENE_SECONDS = 12.0
-WORDS_PER_SECOND = 2.5
+MAX_SCENE_SECONDS = 20.0
+WORDS_PER_SECOND = 2.4
+DEFAULT_NEURAL_VOICE = "en-US-JennyNeural"
 
 
 class LocalCompositorVideoGenerator:
@@ -37,6 +38,8 @@ class LocalCompositorVideoGenerator:
         height: int = DEFAULT_HEIGHT,
         fps: int = FPS,
         enable_tts: bool = True,
+        tts_voice: str = DEFAULT_NEURAL_VOICE,
+        tts_rate: str = "-5%",
     ) -> None:
         self._jobs_dir = Path(jobs_dir)
         self._work_dir = Path(work_dir) if work_dir else self._jobs_dir / "work"
@@ -44,6 +47,8 @@ class LocalCompositorVideoGenerator:
         self._height = height
         self._fps = fps
         self._enable_tts = enable_tts
+        self._tts_voice = tts_voice or DEFAULT_NEURAL_VOICE
+        self._tts_rate = tts_rate
         self._jobs_dir.mkdir(parents=True, exist_ok=True)
         self._work_dir.mkdir(parents=True, exist_ok=True)
         self._configured_cache: bool | None = None
@@ -172,12 +177,16 @@ class LocalCompositorVideoGenerator:
             image = Image.open(image_path).convert("RGB")
             voiceover = str(scene.get("voiceover") or "")
             duration = _scene_duration_seconds(voiceover)
-            wav_path = work / f"scene-{scene['index']:02d}.wav"
-            has_audio = False
+            audio_path: Path | None = None
             if self._enable_tts and voiceover.strip():
-                has_audio = _synthesize_speech(voiceover, wav_path)
-                if has_audio:
-                    duration = max(duration, _wav_duration_seconds(wav_path))
+                audio_path = _synthesize_speech(
+                    voiceover,
+                    work / f"scene-{scene['index']:02d}",
+                    voice=self._tts_voice,
+                    rate=self._tts_rate,
+                )
+                if audio_path is not None:
+                    duration = max(duration, _audio_duration_seconds(audio_path) + 0.35)
 
             frames_path = work / f"scene-{scene['index']:02d}.mp4"
             _write_ken_burns_clip(
@@ -188,9 +197,9 @@ class LocalCompositorVideoGenerator:
                 fps=self._fps,
                 duration_seconds=duration,
             )
-            if has_audio:
+            if audio_path is not None:
                 muxed = work / f"scene-{scene['index']:02d}-muxed.mp4"
-                _mux_audio(frames_path, wav_path, muxed)
+                _mux_audio(frames_path, audio_path, muxed)
                 clip_paths.append(muxed)
             else:
                 clip_paths.append(frames_path)
@@ -306,20 +315,65 @@ def _fit_cover(image, width: int, height: int):
     return resized.crop((left, top, left + width, top + height))
 
 
-def _synthesize_speech(text: str, destination: Path) -> bool:
-    destination.parent.mkdir(parents=True, exist_ok=True)
+def _synthesize_speech(
+    text: str,
+    destination_stem: Path,
+    *,
+    voice: str = DEFAULT_NEURAL_VOICE,
+    rate: str = "-5%",
+) -> Path | None:
+    """Prefer Edge neural TTS (mp3); fall back to Windows SAPI/pyttsx3 (wav)."""
+    destination_stem.parent.mkdir(parents=True, exist_ok=True)
+    mp3_path = destination_stem.with_suffix(".mp3")
+    if _synthesize_speech_edge(text, mp3_path, voice=voice, rate=rate):
+        return mp3_path
+    wav_path = destination_stem.with_suffix(".wav")
+    if _synthesize_speech_pyttsx3(text, wav_path):
+        return wav_path
+    if _synthesize_speech_powershell(text, wav_path):
+        return wav_path
+    return None
+
+
+def _synthesize_speech_edge(
+    text: str,
+    destination: Path,
+    *,
+    voice: str,
+    rate: str,
+) -> bool:
+    try:
+        import asyncio
+
+        import edge_tts
+        import truststore
+
+        truststore.inject_into_ssl()
+    except ImportError:
+        return False
+
+    async def _run() -> None:
+        communicate = edge_tts.Communicate(text, voice=voice, rate=rate)
+        await communicate.save(str(destination))
+
+    try:
+        asyncio.run(_run())
+        return destination.is_file() and destination.stat().st_size > 500
+    except Exception:
+        return False
+
+
+def _synthesize_speech_pyttsx3(text: str, destination: Path) -> bool:
     try:
         import pyttsx3
 
         engine = pyttsx3.init()
-        engine.setProperty("rate", 175)
+        engine.setProperty("rate", 170)
         engine.save_to_file(text, str(destination))
         engine.runAndWait()
-        if destination.is_file() and destination.stat().st_size > 44:
-            return True
+        return destination.is_file() and destination.stat().st_size > 44
     except Exception:
-        pass
-    return _synthesize_speech_powershell(text, destination)
+        return False
 
 
 def _synthesize_speech_powershell(text: str, destination: Path) -> bool:
@@ -343,6 +397,27 @@ def _synthesize_speech_powershell(text: str, destination: Path) -> bool:
         return completed.returncode == 0 and destination.is_file()
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def _audio_duration_seconds(path: Path) -> float:
+    if path.suffix.lower() == ".wav":
+        return _wav_duration_seconds(path)
+    import re
+
+    completed = subprocess.run(
+        [_ffmpeg(), "-i", str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(
+        r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
+        completed.stderr or "",
+    )
+    if not match:
+        return MIN_SCENE_SECONDS
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
 def _wav_duration_seconds(path: Path) -> float:

@@ -10,7 +10,7 @@ from src.video.local_compositor import (
 
 def test_scene_duration_bounds() -> None:
     assert _scene_duration_seconds("one two") == 5.0
-    assert _scene_duration_seconds(" ".join(["word"] * 100)) == 12.0
+    assert _scene_duration_seconds(" ".join(["word"] * 200)) == 20.0
 
 
 def test_local_compositor_renders_sample_scenes(tmp_path: Path) -> None:

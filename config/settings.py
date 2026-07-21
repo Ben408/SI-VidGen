@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     video_backend: str = "local_compositor"
     local_compositor_tts: bool = True
+    local_compositor_voice: str = "en-US-JennyNeural"
+    local_compositor_tts_rate: str = "-5%"
     higgsfield_api_key: str = ""
     higgsfield_workspace_id: str = ""
     higgsfield_job_type: str = "gemini_omni"

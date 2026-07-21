@@ -8,4 +8,6 @@ lxml>=5.3,<7
 pillow>=10.0,<12
 pydantic-settings>=2.6,<3
 pyttsx3>=2.90,<3
+edge-tts>=6.1,<8
+truststore>=0.9,<1
 uvicorn[standard]>=0.32,<1
