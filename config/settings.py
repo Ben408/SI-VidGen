@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     local_compositor_tts: bool = True
     local_compositor_voice: str = "en-US-JennyNeural"
     local_compositor_tts_rate: str = "-5%"
+    local_compositor_captions: bool = True
     higgsfield_api_key: str = ""
     higgsfield_workspace_id: str = ""
     higgsfield_job_type: str = "gemini_omni"

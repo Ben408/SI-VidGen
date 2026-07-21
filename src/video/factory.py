@@ -20,4 +20,5 @@ def create_video_generator(settings: Settings) -> VideoGenerator:
         enable_tts=settings.local_compositor_tts,
         tts_voice=settings.local_compositor_voice,
         tts_rate=settings.local_compositor_tts_rate,
+        enable_captions=settings.local_compositor_captions,
     )

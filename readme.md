@@ -1,6 +1,6 @@
 # SI VidGen — AI-Generated Support Video System
 
-Automated support-video creation for **Sage Intacct** help workflows. Prototype runs **locally** (Python venv + Ollama on RTX 4070–class hardware), indexes **authorized Intacct Support content** from Flare **XHTML build output**, and produces **Higgsfield-ready payloads** for information developers and project managers.
+Automated support-video creation for **Sage Intacct** help workflows. Prototype runs **locally** (Python venv + Ollama on RTX 4070–class hardware), indexes **authorized Intacct Support content** from Flare **XHTML build output**, and produces **reviewable instructional videos** that preserve Help Center screenshots (local compositor by default; optional Higgsfield cloud path).
 
 ---
 
@@ -11,10 +11,9 @@ Build a **local-first prototype** that helps **information developers** and **pr
 1. Accept an issue via **web UI text entry** (MCP and structured-file ingest stubbed).
 2. Classify the issue with a **local LLM** (Ollama, models ≤ ~12B).
 3. Retrieve relevant Intacct help via **RAG** over **Flare XHTML build output** (local embeddings + Chroma).
-4. Generate a structured video script and scene plan with a **local LLM**.
-5. **V0:** Export a **properly formed Higgsfield API payload** (+ review artifacts) to a local path.
-   **V0.1 / demo step 2:** Call the **Higgsfield API** to generate video assets.
-6. Support an internal **review / approve** workflow in a **browser-agnostic web UI**, with **in-UI progress feedback** during processing.
+4. Generate a structured video script and scene plan with a **local LLM**, binding **Help image library** screenshots when available.
+5. **V0 (current demo):** Review/approve in the web UI, then render a local MP4 via the **local screenshot compositor** (Ken Burns + neural TTS + burn-in captions) that **preserves Help PNG pixels**.
+6. **Optional V0.1:** Export Higgsfield explainer packages and/or call **Higgsfield MCP** when `VIDEO_BACKEND=higgsfield` (generative restyle is secondary—Help screenshots are authoritative).
 7. Emit **structured JSON telemetry**, maintain **development status**, and ship with **comprehensive tests** and **thorough documentation**.
 8. Leave the repo **fully prepped for GitHub** (and desirable **GitHub Actions + Vercel** CI/CD) as an exit criterion for the prototype phase.
 
@@ -32,8 +31,8 @@ Build a **local-first prototype** that helps **information developers** and **pr
 | Help corpus | Authorized Intacct Support content; ingest **Flare XHTML build output** (not Flare source) |
 | Help cadence | **Quarterly** major revisions; **Friday** minor updates |
 | Vector store | **Chroma** (prototype) → **Pinecone** (eventual deployment) |
-| Video V0 | Export **valid Higgsfield API payload** to local path |
-| Video V0.1 | Generate assets via **Higgsfield API** |
+| Video V0 | **Local compositor** MP4 under `output/videos/` (default; Help screenshots preserved) |
+| Video V0.1 | Optional **Higgsfield** MCP/API generation (`VIDEO_BACKEND=higgsfield`) |
 | UI | **Web-based**, browser-agnostic |
 | Intake | Text box in UI; **MCP** + structured file ingest **stubbed** |
 | Publish V0 / V0.1 | Write target files to **local path** (`output/`) |
@@ -63,11 +62,11 @@ Build a **local-first prototype** that helps **information developers** and **pr
 ### D3 — Vector store
 **Confirmed.** **Chroma** locally for the prototype. Design a thin `VectorStore` interface so **Pinecone** can replace it for eventual deployment without rewriting RAG callers.
 
-### D4 — Higgsfield
+### D4 — Video backends
 **Confirmed.**
-- **V0:** pipeline ends at a **schema-valid Higgsfield API payload** written under `output/` (plus reviewable script/scenes).
-- **V0.1 / demo step 2:** submit that payload to Higgsfield and retrieve generated video assets.
-Payload builder and API client are separate modules.
+- **V0 / English demo (default):** `VIDEO_BACKEND=local_compositor` — Ken Burns over Help screenshots, Edge neural TTS, optional burn-in captions, voice/pace controls in the review UI. Writes MP4 under `output/videos/`.
+- **Optional cloud path:** `VIDEO_BACKEND=higgsfield` — explainer package export + MCP generation. Generative models may invent UI text; prefer the local compositor when Help screenshots must stay authoritative.
+Payload builder, local compositor, and Higgsfield client are separate modules behind `create_video_generator()`.
 
 ### D5 — Operator interface
 **Confirmed.** **React + Vite** is the browser-agnostic operator UI; **FastAPI** is the backend API. CLI may exist for smoke/dev tests but is not the operator product.
@@ -104,9 +103,9 @@ flowchart TD
     C --> D[RAG over Flare XHTML]
     D --> E[Local LLM Script Generator]
     E --> F[Scene + Payload Builder]
-    F --> G{Version}
-    G -->|V0| H[Write Higgsfield payload to output/]
-    G -->|V0.1| I[Higgsfield API video generation]
+    F --> G{Video backend}
+    G -->|local_compositor default| H[Local MP4: screenshots + TTS + captions]
+    G -->|higgsfield optional| I[Higgsfield MCP / explainer package]
     H --> J[Review in Web UI]
     I --> J
     J --> K[Local publish path]
@@ -138,12 +137,12 @@ flowchart TD
     subgraph Authoring
         C1[Script Builder]
         C2[Scene Planner]
-        C3[Higgsfield Payload Export]
+        C3[Payload + Help medias]
     end
 
     subgraph Render
-        D1[V0: payload artifact]
-        D2[V0.1: Higgsfield API]
+        D1[Local compositor MP4]
+        D2[Optional Higgsfield]
     end
 
     subgraph Operate
@@ -177,7 +176,7 @@ flowchart TD
     /classifier
     /rag                    # xhtml ingest, chunker, chroma (+ pinecone-ready iface)
     /scriptgen
-    /video                  # payload builder; Higgsfield client (V0.1)
+    /video                  # payload builder; local compositor; Higgsfield client
     /publish
     /analytics
     /telemetry              # JSON logs + run store; UI event stream
@@ -188,13 +187,15 @@ flowchart TD
   /data
     /help_xhtml             # optional local crawl cache (gitignored)
     /help_assets            # Help image library catalog + files (gitignored)
+    /compositor_jobs        # local render work (gitignored)
     /help_fixtures          # small committed samples for CI
     /samples
     /vector_store
     /runs
   /output
-    /payloads               # V0 Higgsfield JSON payloads
-    /videos                 # V0.1 generated assets
+    /scripts                # grounded script versions
+    /payloads               # Higgsfield JSON + explainer packages
+    /videos                 # generated MP4s (local compositor or Higgsfield)
     /published
   /tests
     /unit
@@ -207,8 +208,11 @@ flowchart TD
     api.md
     telemetry.md
     corpus_flare_xhtml.md
+    multilingual.md
+    sample_query.md
+    image_library.md
   /.github
-    /workflows              # CI stubs for GitHub Actions
+    /workflows              # CI for GitHub Actions
 ```
 
 ---
@@ -249,15 +253,26 @@ Local LLM produces narration, actions, visuals. Visual references must prefer **
 The generated script opens in the web UI before any video request is sent.
 Operators can edit the title, narration, scene actions, visuals, and voiceover.
 Each save creates a new versioned script and rebuilds the corresponding
-Higgsfield payload. Source IDs and Help assets remain grounding-validated.
+payload/explainer package. Source IDs and Help assets remain grounding-validated.
 
-Manual review is the default. A default-off **Generate video automatically**
-toggle provides the future trusted path to skip manual approval after
-Higgsfield generation is configured. See `docs/sample_query.md` for the
-temporary grounded test case.
+Manual review is the default. Before **Approve & generate video**, operators can
+set local compositor options (voice, narration pace, burn-in captions). When the
+MP4 is ready, the UI shows an inline player plus download. A default-off
+**Generate video automatically** toggle skips manual approval when a video
+backend is configured. See `docs/sample_query.md` for the CSV-import demo case.
 
-### Higgsfield payload (V0)
-Export a schema-valid API payload to `output/payloads/`. Example shape (exact schema to be aligned with current Higgsfield docs when keys are available):
+### Local compositor video (default)
+`VIDEO_BACKEND=local_compositor` (see `.env.example`):
+
+- Ken Burns motion over real Help library PNGs (no generative restyle)
+- Edge neural TTS (`LOCAL_COMPOSITOR_VOICE`, `LOCAL_COMPOSITOR_TTS_RATE`) with local fallbacks
+- Optional burn-in captions from scene voiceover (`LOCAL_COMPOSITOR_CAPTIONS`)
+- Output: `output/videos/{run_id}.mp4`
+
+### Higgsfield payload + optional generation
+Still export schema-oriented payloads under `output/payloads/` plus explainer
+packages for MCP/CLI. Optional live generation uses `VIDEO_BACKEND=higgsfield`.
+Example payload shape (exact schema evolves with provider docs):
 
 ```json
 {
@@ -279,9 +294,6 @@ Export a schema-valid API payload to `output/payloads/`. Example shape (exact sc
   "thumbnail": "auto"
 }
 ```
-
-### Higgsfield generation (V0.1)
-Submit payload via API client; store returned video/thumbnail/captions under `output/videos/`.
 
 ### Review + local publish
 Operators approve/reject in the web UI. V0/V0.1 “publish” copies/writes approved artifacts under `output/published/`.
@@ -399,10 +411,10 @@ UI must stream or poll equivalent progress for the active run.
 2. XHTML ingest + chunking + local embeddings + Chroma (Pinecone-ready interface)
 3. Local LLM classifier + schema validation
 4. RAG retriever + relevance scoring + re-index notes for Fri/quarterly
-5. Script generator + scene planner (Help Center–safe visuals)
-6. **V0:** Higgsfield payload export to `output/payloads/`
-7. Review workflow + local publish path + in-UI progress
-8. **V0.1:** Higgsfield API video generation
+5. Script generator + scene planner (Help Center–safe visuals) + image library
+6. **V0:** Payload/explainer export + **local compositor** demo video
+7. Review workflow + video options/player + local publish path + in-UI progress
+8. **Optional:** Higgsfield MCP generation; later in-app OAuth + Phrase TMS
 9. Comprehensive tests + GitHub Actions (+ Vercel path)
 10. Docs freeze; prototype-exit checklist (GitHub-ready)
 
@@ -416,11 +428,13 @@ Detailed tasks: [`tasks.md`](tasks.md). Module stubs: [`scaffold.md`](scaffold.m
 |---|---|---|
 | Ollama (local) | Required | `gemma3:12b` primary; `llama3.2:latest` fallback; `nomic-embed-text` embeddings |
 | Chroma (local) | Required | Prototype vector store |
+| Pillow / imageio / ffmpeg | Required for default video | Local compositor Ken Burns + mux |
+| edge-tts (+ truststore) | Required for neural narration | Falls back to pyttsx3 / Windows SAPI |
 | Pinecone | Later | Deployment target; interface designed now |
 | Flare XHTML builds | Required | Authorized Intacct Support content |
-| Higgsfield | V0 payload/schema review only; V0.1 live API later | Do not spend generation credits until payload review passes |
-| Phrase TMS | Decision pending | Recommended hybrid path in `docs/multilingual.md` (English authoring → Phrase → localized Help QA) |
-| GitHub / Actions | Required for prototype exit | Repo fully prepped |
+| Higgsfield | Optional | Explainer packages always; live MCP when `VIDEO_BACKEND=higgsfield` |
+| Phrase TMS | Later (post-English) | Recommended hybrid path in `docs/multilingual.md` |
+| GitHub / Actions | Required | Lint + tests green on `main` |
 | Vercel | Later | Full cloud deployment after hosted API/model/storage migration |
 | Help center / LMS publish | Out of scope for V0/V0.1 | Local `output/` only |
 | Cloud LLMs | Out of scope for prototype | Same `llm` interface later |

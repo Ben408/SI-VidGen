@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type RunStatus = "queued" | "processing" | "completed" | "failed";
 
@@ -77,6 +77,14 @@ type ProgressEvent = {
   error_code: string | null;
 };
 
+type CompositorOption = { id: string; label: string };
+
+type CompositorCapabilities = {
+  voices: CompositorOption[];
+  rates: CompositorOption[];
+  defaults: { voice: string; rate: string; captions: boolean };
+};
+
 const terminalStatuses: RunStatus[] = ["completed", "failed"];
 
 function SparkIcon() {
@@ -108,6 +116,12 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [generationAvailable, setGenerationAvailable] = useState(false);
+  const [videoBackend, setVideoBackend] = useState("local_compositor");
+  const [compositor, setCompositor] = useState<CompositorCapabilities | null>(null);
+  const [ttsVoice, setTtsVoice] = useState("en-US-JennyNeural");
+  const [ttsRate, setTtsRate] = useState("-5%");
+  const [burnCaptions, setBurnCaptions] = useState(true);
+  const videoReadyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetch("/api/capabilities")
@@ -118,26 +132,43 @@ function App() {
             capabilities.video_generation ?? capabilities.higgsfield_generation
           )
         );
+        if (typeof capabilities.video_backend === "string") {
+          setVideoBackend(capabilities.video_backend);
+        }
+        const options = capabilities.compositor as CompositorCapabilities | undefined;
+        if (options?.defaults) {
+          setCompositor(options);
+          setTtsVoice(options.defaults.voice);
+          setTtsRate(options.defaults.rate);
+          setBurnCaptions(Boolean(options.defaults.captions));
+        }
       })
       .catch(() => setGenerationAvailable(false));
   }, []);
 
   useEffect(() => {
-    if (!run) return;
-    if (!["pending", "submitted"].includes(run.generation_status)) return;
+    const runId = run?.run_id;
+    const generationStatus = run?.generation_status;
+    if (!runId || !generationStatus) return;
+    if (!["pending", "submitted"].includes(generationStatus)) return;
 
     const interval = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/runs/${run.run_id}`);
+        const response = await fetch(`/api/runs/${runId}`);
         if (!response.ok) return;
         setRun(await response.json());
       } catch {
-        // Keep polling; transient errors are fine while waiting on Higgsfield.
+        // Keep polling; transient errors are fine while waiting on generation.
       }
     }, 2000);
 
     return () => window.clearInterval(interval);
   }, [run?.run_id, run?.generation_status]);
+
+  useEffect(() => {
+    if (run?.generation_status !== "ready") return;
+    videoReadyRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [run?.generation_status, run?.run_id]);
 
   useEffect(() => {
     if (!run || terminalStatuses.includes(run.status)) return;
@@ -268,10 +299,16 @@ function App() {
         setRun(await saveResponse.json());
         setScriptDirty(false);
       }
+      const body: Record<string, unknown> = { generate_video: generateVideo };
+      if (generateVideo && compositor) {
+        body.tts_voice = ttsVoice;
+        body.tts_rate = ttsRate;
+        body.captions = burnCaptions;
+      }
       const response = await fetch(`/api/runs/${run.run_id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generate_video: generateVideo }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error("Unable to approve the script");
       setRun(await response.json());
@@ -600,6 +637,57 @@ function App() {
                     ))}
                   </div>
 
+                  {compositor && generationAvailable && (
+                    <div className="compositor-options" aria-label="Local video options">
+                      <h4>Video options</h4>
+                      <p>
+                        Local compositor preserves Help screenshots. Adjust narration
+                        voice, pace, and on-screen captions before you generate.
+                      </p>
+                      <div className="compositor-grid">
+                        <label>
+                          Voice
+                          <select
+                            value={ttsVoice}
+                            onChange={(event) => setTtsVoice(event.target.value)}
+                          >
+                            {compositor.voices.map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Narration pace
+                          <select
+                            value={ttsRate}
+                            onChange={(event) => setTtsRate(event.target.value)}
+                          >
+                            {compositor.rates.map((rate) => (
+                              <option key={rate.id} value={rate.id}>
+                                {rate.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <label className={`toggle-row ${saving ? "disabled" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={burnCaptions}
+                          disabled={saving}
+                          onChange={(event) => setBurnCaptions(event.target.checked)}
+                        />
+                        <span className="toggle-control" aria-hidden="true" />
+                        <span>
+                          <strong>Burn-in captions</strong>
+                          <small>Show scene narration on a bottom caption bar.</small>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
                   <div className="review-actions">
                     <button
                       type="button"
@@ -633,30 +721,69 @@ function App() {
                   </div>
 
                   {run.generation_status !== "not_requested" && (
-                    <div className={`generation-status ${run.generation_status}`}>
+                    <div
+                      ref={
+                        run.generation_status === "ready" ? videoReadyRef : undefined
+                      }
+                      className={`generation-status ${run.generation_status}`}
+                    >
                       {run.generation_status === "submitted" && (
                         <p>
-                          Submitted successfully
+                          Composing your walkthrough
                           {run.generation_job_ids && run.generation_job_ids.length > 1
-                            ? ` · ${run.generation_job_ids.length} scene clips`
+                            ? ` · ${run.generation_job_ids.length} scenes`
                             : ""}
-                          {run.generation_id ? ` · job ${run.generation_id}` : ""}.
-                          Waiting for the video…
+                          …
                         </p>
                       )}
                       {run.generation_status === "pending" && (
-                        <p>Submitting video generation…</p>
+                        <p>Starting video generation…</p>
                       )}
                       {run.generation_status === "ready" && (
-                        <p>
-                          Video ready.
+                        <div className="video-ready-panel">
+                          <div className="video-ready-banner">
+                            <strong>Video ready</strong>
+                            <span>
+                              Help screenshots preserved
+                              {videoBackend === "local_compositor"
+                                ? " · local compositor"
+                                : ""}
+                            </span>
+                          </div>
+                          <video
+                            key={run.video_path || run.generation_id || run.run_id}
+                            className="video-player"
+                            controls
+                            playsInline
+                            preload="metadata"
+                            src={`/api/runs/${run.run_id}/video`}
+                          >
+                            Your browser does not support embedded video.
+                          </video>
+                          <div className="video-ready-actions">
+                            <a
+                              className="download"
+                              href={`/api/runs/${run.run_id}/video`}
+                              download
+                            >
+                              Download MP4
+                              <ArrowIcon />
+                            </a>
+                            <a
+                              className="download secondary"
+                              href={`/api/runs/${run.run_id}/video`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open in new tab
+                            </a>
+                          </div>
                           {run.video_path && (
-                            <>
-                              {" "}
-                              Local file: <code>{run.video_path}</code>
-                            </>
+                            <p className="video-path-note">
+                              Saved locally as <code>{run.video_path}</code>
+                            </p>
                           )}
-                        </p>
+                        </div>
                       )}
                       {run.generation_status === "failed" && (
                         <p>
@@ -669,17 +796,6 @@ function App() {
                           Video generation is unavailable. Check VIDEO_BACKEND /
                           local compositor dependencies, or Higgsfield auth.
                         </p>
-                      )}
-                      {run.generation_status === "ready" && (
-                        <a
-                          className="download"
-                          href={`/api/runs/${run.run_id}/video`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open local video
-                          <ArrowIcon />
-                        </a>
                       )}
                     </div>
                   )}
@@ -707,7 +823,7 @@ function App() {
               </div>
               <p className="credit-note">
                 {run.generation_status === "ready"
-                  ? "Video written to your local output/videos folder (Help screenshots preserved)."
+                  ? "Play the walkthrough above, or download the MP4 from output/videos."
                   : run.generation_status === "submitted" ||
                       run.generation_status === "pending"
                     ? "Generation is in progress. This page will update when the file is ready."

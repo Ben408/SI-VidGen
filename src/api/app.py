@@ -59,12 +59,23 @@ def create_app(
         return {"status": "ok", "version": app.version}
 
     @app.get("/api/capabilities")
-    def capabilities() -> dict[str, bool | str]:
-        return {
-            "higgsfield_generation": orchestrator.generation_available(),
-            "video_generation": orchestrator.generation_available(),
+    def capabilities() -> dict[str, object]:
+        available = orchestrator.generation_available()
+        backend = (settings.video_backend or "local_compositor").strip().lower()
+        payload: dict[str, object] = {
+            "higgsfield_generation": available,
+            "video_generation": available,
             "video_backend": settings.video_backend,
         }
+        if backend not in {"higgsfield", "hf", "gemini_omni"}:
+            from src.video.local_compositor import compositor_capability_defaults
+
+            payload["compositor"] = compositor_capability_defaults(
+                voice=settings.local_compositor_voice,
+                rate=settings.local_compositor_tts_rate,
+                captions=settings.local_compositor_captions,
+            )
+        return payload
 
     @app.post("/api/runs", status_code=202)
     def create_run(issue: IssueInput, background_tasks: BackgroundTasks) -> RunResult:
@@ -199,7 +210,7 @@ def create_app(
         run_id: str, action: ReviewAction, background_tasks: BackgroundTasks
     ) -> RunResult:
         try:
-            result = orchestrator.approve(run_id, action.generate_video)
+            result = orchestrator.approve(run_id, action=action)
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except RuntimeError as error:

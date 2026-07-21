@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import textwrap
 import wave
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,40 @@ MIN_SCENE_SECONDS = 5.0
 MAX_SCENE_SECONDS = 20.0
 WORDS_PER_SECOND = 2.4
 DEFAULT_NEURAL_VOICE = "en-US-JennyNeural"
+DEFAULT_TTS_RATE = "-5%"
+
+COMPOSITOR_VOICES: list[dict[str, str]] = [
+    {"id": "en-US-JennyNeural", "label": "Jenny (US) — clear, professional"},
+    {"id": "en-US-AriaNeural", "label": "Aria (US) — warm"},
+    {"id": "en-US-AndrewNeural", "label": "Andrew (US) — conversational"},
+    {"id": "en-US-GuyNeural", "label": "Guy (US) — steady"},
+    {"id": "en-GB-SoniaNeural", "label": "Sonia (UK)"},
+]
+
+COMPOSITOR_RATES: list[dict[str, str]] = [
+    {"id": "-20%", "label": "Slower (−20%)"},
+    {"id": "-10%", "label": "Slightly slow (−10%)"},
+    {"id": "-5%", "label": "Default (−5%)"},
+    {"id": "+0%", "label": "Natural (+0%)"},
+    {"id": "+10%", "label": "Faster (+10%)"},
+]
+
+
+def compositor_capability_defaults(
+    *,
+    voice: str = DEFAULT_NEURAL_VOICE,
+    rate: str = DEFAULT_TTS_RATE,
+    captions: bool = True,
+) -> dict[str, object]:
+    return {
+        "voices": COMPOSITOR_VOICES,
+        "rates": COMPOSITOR_RATES,
+        "defaults": {
+            "voice": voice or DEFAULT_NEURAL_VOICE,
+            "rate": rate or DEFAULT_TTS_RATE,
+            "captions": captions,
+        },
+    }
 
 
 class LocalCompositorVideoGenerator:
@@ -37,7 +72,8 @@ class LocalCompositorVideoGenerator:
         fps: int = FPS,
         enable_tts: bool = True,
         tts_voice: str = DEFAULT_NEURAL_VOICE,
-        tts_rate: str = "-5%",
+        tts_rate: str = DEFAULT_TTS_RATE,
+        enable_captions: bool = True,
     ) -> None:
         self._jobs_dir = Path(jobs_dir)
         self._work_dir = Path(work_dir) if work_dir else self._jobs_dir / "work"
@@ -46,7 +82,8 @@ class LocalCompositorVideoGenerator:
         self._fps = fps
         self._enable_tts = enable_tts
         self._tts_voice = tts_voice or DEFAULT_NEURAL_VOICE
-        self._tts_rate = tts_rate
+        self._tts_rate = tts_rate or DEFAULT_TTS_RATE
+        self._enable_captions = enable_captions
         self._jobs_dir.mkdir(parents=True, exist_ok=True)
         self._work_dir.mkdir(parents=True, exist_ok=True)
         self._configured_cache: bool | None = None
@@ -112,6 +149,12 @@ class LocalCompositorVideoGenerator:
             "height": self._height if aspect == "16:9" else self._width,
             "scenes": scenes_spec,
             "title": _package_title(package) or "SI VidGen local compose",
+            "tts_voice": payload.tts_voice or self._tts_voice,
+            "tts_rate": payload.tts_rate or self._tts_rate,
+            "captions": (
+                payload.captions if payload.captions is not None else self._enable_captions
+            ),
+            "enable_tts": self._enable_tts,
         }
         path = self._jobs_dir / f"{job_id}.json"
         path.write_text(json.dumps(job, indent=2), encoding="utf-8")
@@ -164,6 +207,10 @@ class LocalCompositorVideoGenerator:
         job_id = str(job["job_id"])
         width = int(job["width"])
         height = int(job["height"])
+        enable_tts = bool(job.get("enable_tts", self._enable_tts))
+        tts_voice = str(job.get("tts_voice") or self._tts_voice)
+        tts_rate = str(job.get("tts_rate") or self._tts_rate)
+        captions = bool(job.get("captions", self._enable_captions))
         work = self._work_dir / job_id
         if work.exists():
             shutil.rmtree(work, ignore_errors=True)
@@ -176,12 +223,12 @@ class LocalCompositorVideoGenerator:
             voiceover = str(scene.get("voiceover") or "")
             duration = _scene_duration_seconds(voiceover)
             audio_path: Path | None = None
-            if self._enable_tts and voiceover.strip():
+            if enable_tts and voiceover.strip():
                 audio_path = _synthesize_speech(
                     voiceover,
                     work / f"scene-{scene['index']:02d}",
-                    voice=self._tts_voice,
-                    rate=self._tts_rate,
+                    voice=tts_voice,
+                    rate=tts_rate,
                 )
                 if audio_path is not None:
                     duration = max(duration, _audio_duration_seconds(audio_path) + 0.35)
@@ -194,6 +241,7 @@ class LocalCompositorVideoGenerator:
                 height=height,
                 fps=self._fps,
                 duration_seconds=duration,
+                caption=voiceover if captions else None,
             )
             if audio_path is not None:
                 muxed = work / f"scene-{scene['index']:02d}-muxed.mp4"
@@ -257,6 +305,7 @@ def _write_ken_burns_clip(
     height: int,
     fps: int,
     duration_seconds: float,
+    caption: str | None = None,
 ) -> None:
     import imageio.v3 as iio
     import numpy as np
@@ -268,6 +317,9 @@ def _write_ken_burns_clip(
     # Zoom slowly into the upper-left-ish focal area (typical UI chrome).
     start_zoom = 1.0
     end_zoom = 1.12
+    caption_overlay = None
+    if caption and caption.strip():
+        caption_overlay = _build_caption_overlay(width, height, caption.strip())
     frames = []
     for index in range(frame_count):
         t = index / max(1, frame_count - 1)
@@ -281,6 +333,9 @@ def _write_ken_burns_clip(
         y = max_y * (0.12 * t)
         box = (int(x), int(y), int(x + crop_w), int(y + crop_h))
         frame = src.crop(box).resize((width, height), Image.Resampling.LANCZOS)
+        if caption_overlay is not None:
+            frame = frame.copy()
+            frame.paste(caption_overlay, (0, 0), caption_overlay)
         frames.append(np.asarray(frame))
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -292,6 +347,63 @@ def _write_ken_burns_clip(
         quality=8,
         pixelformat="yuv420p",
     )
+
+
+def _build_caption_overlay(width: int, height: int, text: str):
+    """Semi-transparent bottom bar with wrapped narration (RGBA)."""
+    from PIL import Image, ImageDraw
+
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    font_size = max(22, min(34, width // 42))
+    font = _load_caption_font(font_size)
+    max_chars = max(28, width // max(10, font_size // 2))
+    lines = textwrap.wrap(text, width=max_chars)[:4]
+    if not lines:
+        return overlay
+
+    line_heights = []
+    line_widths = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_widths.append(bbox[2] - bbox[0])
+        line_heights.append(bbox[3] - bbox[1])
+    padding_x = 28
+    padding_y = 16
+    gap = max(4, font_size // 6)
+    text_block_h = sum(line_heights) + gap * (len(lines) - 1)
+    bar_h = text_block_h + padding_y * 2
+    bar_top = height - bar_h - 24
+    draw.rectangle(
+        (0, bar_top, width, height),
+        fill=(12, 18, 28, 168),
+    )
+    y = bar_top + padding_y
+    for line, line_w, line_h in zip(lines, line_widths, line_heights, strict=True):
+        x = max(padding_x, (width - line_w) // 2)
+        draw.text((x, y), line, font=font, fill=(255, 255, 255, 245))
+        y += line_h + gap
+    return overlay
+
+
+def _load_caption_font(size: int):
+    from PIL import ImageFont
+
+    candidates = [
+        Path(r"C:\Windows\Fonts\segoeui.ttf"),
+        Path(r"C:\Windows\Fonts\arial.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        Path("/System/Library/Fonts/Helvetica.ttc"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                return ImageFont.truetype(str(path), size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
 
 
 def _fit_cover(image, width: int, height: int):
@@ -318,7 +430,7 @@ def _synthesize_speech(
     destination_stem: Path,
     *,
     voice: str = DEFAULT_NEURAL_VOICE,
-    rate: str = "-5%",
+    rate: str = DEFAULT_TTS_RATE,
 ) -> Path | None:
     """Prefer Edge neural TTS (mp3); fall back to Windows SAPI/pyttsx3 (wav)."""
     destination_stem.parent.mkdir(parents=True, exist_ok=True)

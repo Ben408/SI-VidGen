@@ -9,9 +9,10 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 **Legend:** `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 **Prototype versions**
-- **V0:** Web UI → classify → RAG → script/scenes → **valid Higgsfield payload** on local disk + review + JSON/UI telemetry
-- **V0.1:** Same path + **Higgsfield API** video asset generation to local disk
-- **Prototype exit:** Directory fully prepped for GitHub check-in (tests, docs, status, CI stubs); Vercel path documented/scaffolded as desirable
+- **V0:** Web UI → classify → RAG → script/scenes → reviewable package on local disk + JSON/UI telemetry
+- **V0 demo video:** **Local compositor** MP4 (Help screenshots preserved; captions + TTS) — **current English deliverable**
+- **V0.1:** Optional **Higgsfield** cloud generation (MCP/OAuth); generative restyle is secondary to Help fidelity
+- **Prototype exit:** Directory fully prepped for GitHub check-in (tests, docs, status, CI); Vercel path documented as desirable
 
 ---
 
@@ -39,7 +40,8 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 - [x] Create `src/` modules from [`scaffold.md`](scaffold.md)
 - [x] `src/llm/client.py` (Ollama)
 - [x] `src/video/payload_builder.py` (V0 primary)
-- [x] `src/video/higgsfield_client.py` (V0.1)
+- [x] `src/video/higgsfield_client.py` (V0.1 / optional)
+- [x] `src/video/local_compositor.py` (default demo video backend)
 - [x] FastAPI shell + React/Vite text-entry UI page
 - [x] Smoke orchestrator path writing a sample payload
 - [x] Pull approved `nomic-embed-text` model
@@ -107,25 +109,34 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 
 ### Task 4.2: Scene planner / review artifacts
 - [x] Provider-ready scene list + branding defaults from config
-- [x] Grounded script JSON export + UI source/confidence review (no Higgsfield API calls)
+- [x] Grounded script JSON export + UI source/confidence review
 - [x] Help image library harvest (`python -m src.rag.build_image_library`) + `docs/image_library.md`
 - [x] Auto-bind library assets; visual coverage green/yellow/red in run + UI
 
 ---
 
-## Phase 5 — Higgsfield payload (V0) then API (V0.1)
+## Phase 5 — Video package (V0) + render backends
 
-### Task 5.1: V0 payload export
+### Task 5.1: V0 payload / explainer export
 - [~] Align payload schema with current Higgsfield API docs
 - [x] `payload_builder` writes `output/payloads/{run_id}.json`
 - [x] Explainer MCP/CLI package: `*-explainer.json`, `*-medias.json`, `*-prompt.txt` (local paths, max 14)
 - [ ] Schema validation tests (golden files)
 - [x] UI: download / view payload + explainer package
 
-### Task 5.2: V0.1 Higgsfield client
-- [ ] API wrapper using `HIGGSFIELD_API_KEY`
-- [ ] Submit payload; store assets under `output/videos/`
-- [ ] Error handling + telemetry; CI skips live call without secret
+### Task 5.2: Local compositor (default English demo)
+- [x] Ken Burns over real Help screenshots (`LocalCompositorVideoGenerator`)
+- [x] Edge neural TTS with SAPI/pyttsx3 fallback
+- [x] Burn-in captions from scene voiceover
+- [x] Per-run voice / narration pace / captions via Approve UI + `/api/capabilities`
+- [x] Inline **Video ready** player + download MP4
+- [x] Sample re-render (`scripts/render_sample_local_compositor.py`, `docs/sample_query.md`)
+
+### Task 5.3: Optional Higgsfield client
+- [x] MCP client path (`higgsfield_client`) + scene-chunked `gemini_omni` / stitch
+- [~] In-app MCP OAuth (not Cursor-tied) — **next platform item**
+- [ ] Error handling + telemetry polish; CI skips live call without secret
+- [!] Trial/CLI may return `only_mcp_usage_on_trial_is_available`; generative restyle can invent UI text
 
 ---
 
@@ -137,6 +148,7 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 - [x] Payload regeneration after each saved edit
 - [x] Default-off automatic-generation toggle with availability gate
 - [x] In-UI progress during processing
+- [x] Local compositor options (voice, pace, captions) + video-ready panel
 
 ### Task 6.2: Local publish (V0 / V0.1)
 - [ ] Write approved artifacts to `output/published/`
@@ -157,16 +169,17 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 ## Phase 8 — Intake stubs + E2E
 
 ### Task 8.1: Orchestrator
-- [x] Full path: intake → classify → RAG → script → payload (Higgsfield generation deferred)
+- [x] Full path: intake → classify → RAG → script → payload → local video (optional Higgsfield)
 - [x] Logging, error codes, safe retries
 
 ### Task 8.2: Web UI (primary)
 - [x] Text entry box
 - [x] Stage inspection + editable script + approve + script/payload downloads
 - [x] Browser-agnostic operator flows
+- [x] Video options + inline player when generation is ready
 
 ### Task 8.3: Stubbed intake connectors
-- [ ] MCP connection stub (interface + “not configured” behavior)
+- [ ] MCP connection stub (interface + “not configured” behavior) — expand with shared OAuth client
 - [ ] Structured file ingest stub (JSON/CSV of issues)
 
 ### Task 8.4: E2E tests
@@ -179,8 +192,8 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 ## Phase 9 — Quality gates (required)
 
 ### Task 9.1: Comprehensive tests
-- [x] Unit / contract / integration / e2e (36 local tests)
-- [ ] Coverage tracking in CI
+- [x] Unit / contract / integration / e2e (**47** local tests)
+- [x] Coverage reporting via `pytest --cov=src` in CI
 - [x] Regression fixtures for XHTML samples
 
 ### Task 9.2: Telemetry completeness
@@ -190,9 +203,10 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 - [x] Secret redaction test
 
 ### Task 9.3: GitHub + CI/CD path
-- [x] GitHub Actions: lint + tests on PR (no paid APIs)
+- [x] GitHub Actions: lint + tests on PR/push (no paid APIs)
 - [x] Document **future full-cloud Vercel deployment** after hosted API/model/storage migration
 - [x] **Prototype exit checklist:** repo ready for initial GitHub check-in
+- [~] Quiet Node 20 deprecation warnings on Actions (checkout/setup-* bumps)
 
 ---
 
@@ -200,13 +214,20 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 
 ### Task 10.1: Local demo
 - [x] PowerShell/BAT launcher (`start-si-vidgen.bat`)
-- [x] Sample issue → payload on disk (CSV import + library medias smoke)
+- [x] Sample issue → grounded script + library medias (`docs/sample_query.md`)
+- [x] Sample → captioned local compositor MP4 (`demo-sample-query-local-compositor.mp4`)
 
 ### Task 10.2: Documentation completion
-- [ ] Operator guide (info developers / PMs)
-- [ ] Developer onboarding
-- [ ] API + corpus + telemetry docs
-- [ ] `DEVELOPMENT_STATUS.md` reflects V0 / V0.1 readiness
+- [~] Control docs refreshed 2026-07-21 (`DEVELOPMENT_STATUS`, `tasks`, `readme`, `pitch_deck`, `requirements`)
+- [ ] Operator guide (info developers / PMs) — flesh out for demo
+- [ ] Developer onboarding polish
+- [ ] API + corpus + telemetry docs stay in sync with compositor options
+
+### Task 10.3: Next after English demo (ordered)
+- [ ] Shared MCP client + in-app OAuth (Higgsfield first)
+- [ ] Confirm Phrase ownership questions (`docs/multilingual.md`)
+- [ ] Phrase export package + MCP stub (FR/DE/ES-ES narration)
+- [ ] Localized Help crawl/QA for Option C hybrid
 
 ---
 
@@ -218,3 +239,4 @@ Status: [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) · Spec: [`readme.md`](
 - Cloud LLM providers
 - Production auth, multi-tenant SaaS
 - Screenshots not already available in the Intacct Help Center
+- Treating generative Higgsfield restyle as the primary Help walkthrough path

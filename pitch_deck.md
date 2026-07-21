@@ -61,7 +61,8 @@ AI can transform existing support knowledge into a scalable video-production sys
 - Start with authorized, published Intacct Help Center content as the source of truth.
 - Match a user issue to the most relevant procedures through retrieval-augmented generation.
 - Generate structured narration and scene instructions with a local language model.
-- Convert approved scripts and scenes into Higgsfield-ready video requests.
+- Bind real Help Center screenshots from a harvested image library—never invent product UI.
+- Render a reviewable walkthrough video locally (screenshots + narration + captions), with optional cloud video providers later.
 - Keep information developers and project managers in control through review and approval.
 
 ### Value statement
@@ -85,22 +86,23 @@ From a support issue to a reviewable video package in one guided workflow.
 2. **Understand** — A local Ollama model classifies the feature area, intent, and likely error type.
 3. **Ground** — RAG retrieves relevant content from authorized Flare XHTML Help Center output.
 4. **Author** — AI generates narration, actions, and a scene plan grounded in the retrieved source.
-5. **Package or render** — V0 exports a validated Higgsfield payload; V0.1 submits it to Higgsfield for video generation.
-6. **Review and approve** — Information developers or project managers inspect the script, scenes, sources, and output.
-7. **Publish locally and measure** — Approved artifacts are stored locally with privacy-safe run telemetry.
+5. **Attach visuals** — Usable Help Center screenshots are bound from the local image library.
+6. **Render** — The default path composes a local MP4 (Ken Burns + neural voice + captions) that preserves Help pixels; optional Higgsfield packages remain available.
+7. **Review and approve** — Information developers or project managers inspect the script, scenes, sources, and play the video in the UI.
+8. **Publish locally and measure** — Approved artifacts are stored locally with privacy-safe run telemetry.
 
 ### Guardrails
 - Local LLM processing for the prototype
-- Existing Help Center assets preferred
+- Existing Help Center assets preferred and preserved in the demo video path
 - No invented product screenshots
 - No full issue text or retrieved help chunks retained in telemetry
 - API secrets stored outside source control
 
 ### Visual direction
-Use a horizontal seven-step pipeline with a visible human approval gate between generation and publication.
+Use a horizontal pipeline with a visible human approval gate between draft generation and publication; show a small “Help screenshot preserved” badge on the render step.
 
 ### Speaker note
-The prototype intentionally begins with operator-entered issues and local publishing. MCP, structured-file intake, and production publishing are integration points for later phases once output quality and workflow value are proven.
+The prototype intentionally begins with operator-entered issues and local publishing. The stakeholder demo emphasizes Help fidelity over generative video restyling. MCP, Phrase localization, structured-file intake, and production publishing are next-phase integration points once English output quality is proven.
 
 ---
 
@@ -115,61 +117,59 @@ flowchart TD
     B --> C[Local LLM Classifier]
     C --> D[RAG over Flare XHTML]
     D --> E[Local LLM Script Generator]
-    E --> F[Scene + Payload Builder]
-    F --> G{Version}
-    G -->|V0| H[Write Higgsfield payload to output/]
-    G -->|V0.1| I[Higgsfield API video generation]
-    H --> J[Review in Web UI]
-    I --> J
+    E --> F[Scene + Help medias]
+    F --> G[Local compositor MP4]
+    G --> J[Review in Web UI]
     J --> K[Local publish path]
     K --> L[JSON telemetry + UI progress]
 ```
 
 ### Technology callouts
-- **Operator experience:** React + Vite web UI
+- **Operator experience:** React + Vite web UI (script edit, voice/pace/captions, inline video player)
 - **Application layer:** FastAPI + Python 3.11
 - **Local AI:** Ollama with `gemma3:12b`; lightweight fallback available
-- **Knowledge retrieval:** Flare XHTML → local embeddings → Chroma
+- **Knowledge retrieval:** Flare XHTML → local embeddings → Chroma + Help image library
 - **Future portability:** Pinecone-ready vector-store interface
-- **Video:** Higgsfield payload export in V0; live API generation in V0.1
-- **Operations:** Structured JSON telemetry, progress feedback, tests, and GitHub Actions path
+- **Video (demo):** Local screenshot compositor — Help pixels preserved
+- **Video (optional):** Higgsfield MCP / explainer packages
+- **Operations:** Structured JSON telemetry, progress feedback, tests, and GitHub Actions
 
 ### Visual direction
-Render the Mermaid flow as a clean architecture diagram. Visually group intake, understanding, knowledge, authoring, rendering, review, and telemetry. Highlight the human review gate.
+Render the Mermaid flow as a clean architecture diagram. Visually group intake, understanding, knowledge, authoring, rendering, review, and telemetry. Highlight the human review gate and “screenshots preserved.”
 
 ### Speaker note
 Each provider sits behind a defined module, reducing lock-in. The prototype runs on local RTX 4070-class hardware with models up to approximately 12B parameters. The design can later move model inference, vector storage, and application hosting to managed services without rewriting the full workflow.
 
 ---
 
-## Slide 6 — Prototype Demo: One Issue, One Traceable Video Package
+## Slide 6 — Prototype Demo: One Issue, One Traceable Video
 
 ### Headline
 Demonstrate the complete path using a real accounting support scenario.
 
 ### Example issue
-“I’m getting an unbalanced journal entry error when I try to post in General Ledger.”
+“A business user needs to import General Ledger journal entries from a CSV file—show how to prepare the CSV and upload it into Sage Intacct.”
 
 ### Demo flow
-1. Enter the issue in the SI VidGen web interface.
-2. Watch live progress as the system classifies it as a General Ledger posting issue.
-3. Review the retrieved Intacct Help Center source and recommended resolution steps.
-4. Inspect the generated title, narration, and scene-by-scene plan.
-5. Export the validated Higgsfield JSON payload in V0.
-6. In V0.1, submit the same approved payload and retrieve the video, thumbnail, and captions.
-7. Approve or reject the package and store approved artifacts in the local publish path.
+1. Enter the issue in the SI VidGen web interface (module: General Ledger).
+2. Watch live progress as the system classifies and retrieves Help topics with screenshots.
+3. Review the grounded title, narration, scene plan, and visual coverage.
+4. Optionally adjust narration voice, pace, and burn-in captions.
+5. Approve and generate — play the local walkthrough video inline (Help screenshots preserved).
+6. Download the MP4 and the grounded script / payload artifacts as needed.
 
 ### What the demo proves
 - The answer is grounded in authorized support content.
-- The workflow is traceable from issue to source to script to output.
+- Help Center screenshots remain authoritative in the video (no invented UI).
+- The workflow is traceable from issue to source to script to MP4.
 - Human reviewers remain accountable for the final result.
-- The video-provider integration is separated from content logic.
+- Video rendering is separable from content logic (local compositor today; cloud providers later).
 
 ### Visual direction
-Use a storyboard with four large frames: issue, source-backed script, Higgsfield payload/video, and reviewer approval. Add a small provenance line connecting each frame.
+Use a storyboard with four large frames: issue, source-backed script with Help screenshot, captioned local video player, and reviewer approval. Add a small provenance line connecting each frame.
 
 ### Speaker note
-V0 proves the most important technical contract: the system can reliably turn an issue and trusted source content into a structured, reviewable Higgsfield request. V0.1 adds the live rendering step without changing the upstream workflow.
+The English demo path no longer stops at a JSON payload. Stakeholders can watch a finished walkthrough in the browser. Cloud generative video remains optional and is secondary when Help fidelity matters.
 
 ---
 
@@ -210,8 +210,9 @@ The goal is not fully autonomous publishing in the prototype. The value comes fr
 Success will be measured through workflow efficiency, content quality, and customer outcomes.
 
 ### Prototype measures
-- **Pipeline completion rate:** issues that produce a valid, reviewable payload
+- **Pipeline completion rate:** issues that produce a reviewable script and local walkthrough video
 - **Grounding quality:** retrieved sources judged relevant by reviewers
+- **Visual fidelity:** Help screenshots preserved (no invented product UI in the demo path)
 - **First-pass approval rate:** outputs approved without material rewrite
 - **Production cycle time:** issue intake to approved video package
 - **Reliability:** stage success rate, processing time, and recoverable errors
@@ -240,21 +241,23 @@ This avoids speculative ROI. The prototype establishes technical and editorial f
 ### Headline
 Advance in controlled stages, with quality and governance gates at each step.
 
-### Phase 1 — Core pipeline: prototype
+### Phase 1 — Core pipeline: prototype (current)
 - Browser-based text intake
 - Local classification and RAG over authorized Flare XHTML
-- Script and scene generation
-- V0 Higgsfield payload export
-- Review workflow, local output, telemetry, and comprehensive tests
+- Script and scene generation with Help image library binding
+- Local compositor video (screenshots + TTS + captions)
+- Review workflow, voice/pace controls, inline player, telemetry, and tests
+- GitHub baseline with green CI
 
-### Phase 2 — Render and connect
-- V0.1 live Higgsfield video generation
-- MCP and structured issue-file connectors
+### Phase 2 — Connect providers and intake
+- In-app MCP OAuth (Higgsfield and later Phrase)
+- Optional Higgsfield cloud generation where appropriate
+- Structured issue-file connectors
 - Help Center, portal, or LMS publishing adapters
 - Content-change detection for Friday minors and quarterly releases
 
 ### Phase 3 — Expand reach
-- Multi-language scripts, narration, captions, and review workflows
+- Multi-language scripts, narration, captions via Phrase TMS (hybrid with localized Help QA)
 - Reusable templates by module, task type, and audience
 - Production analytics and content-gap recommendations
 
@@ -265,7 +268,7 @@ Advance in controlled stages, with quality and governance gates at each step.
 - Human approval thresholds based on confidence and risk
 
 ### Visual direction
-Use a four-stage maturity curve. Mark the current prototype boundary after Phase 1 and the live Higgsfield demo milestone at the start of Phase 2.
+Use a four-stage maturity curve. Mark the current prototype boundary after Phase 1 (local video demo) and MCP/Phrase connectors at the start of Phase 2.
 
 ### Speaker note
 The roadmap deliberately separates content intelligence from production integrations. Each phase delivers usable value while creating evidence for the next investment decision.
@@ -278,14 +281,14 @@ The roadmap deliberately separates content intelligence from production integrat
 Prove the workflow on real support content and a small set of high-value issues.
 
 ### Proposed prototype outcome
-An end-to-end, local-first demonstration that converts representative Intacct support issues into grounded scripts, scene plans, and valid Higgsfield payloads—with an optional live video-generation step.
+An end-to-end, local-first demonstration that converts representative Intacct support issues into grounded scripts, Help-screenshot walkthrough videos (with narration and captions), and optional provider packages—ready for information-developer review in the browser.
 
 ### Client inputs needed
 - Confirm access to the authorized Flare XHTML Help Center output
 - Select 5–10 recurring, high-value support scenarios for evaluation
 - Identify information developers and project managers for review
 - Provide approved brand guidance and existing reusable visual assets
-- Obtain Higgsfield API access for the V0.1 rendering demonstration
+- Agree whether cloud generative video (e.g. Higgsfield) is needed beyond Help-faithful local composition
 - Agree on baseline measures and prototype acceptance criteria
 
 ### Decision enabled

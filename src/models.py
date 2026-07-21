@@ -67,6 +67,10 @@ class ScriptEdit(BaseModel):
 
 class ReviewAction(BaseModel):
     generate_video: bool = False
+    # Local compositor options (ignored by Higgsfield backend).
+    tts_voice: str | None = None
+    tts_rate: str | None = None
+    captions: bool | None = None
 
 
 class HiggsfieldPayload(BaseModel):
@@ -83,6 +87,8 @@ class HiggsfieldPayload(BaseModel):
         }
     )
     captions: bool = True
+    tts_voice: str | None = None
+    tts_rate: str | None = None
     thumbnail: str = "auto"
     medias: list[str] = Field(default_factory=list)
     preserve_source_visuals: bool = True

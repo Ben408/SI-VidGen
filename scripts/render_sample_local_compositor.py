@@ -29,12 +29,16 @@ def main() -> None:
 
     payload = build_higgsfield_payload(script, library, visual_coverage="green")
     payload = payload.model_copy(
-        update={"explainer_package_path": str(explainer_path.resolve())}
+        update={
+            "explainer_package_path": str(explainer_path.resolve()),
+            "captions": True,
+        }
     )
 
     gen = LocalCompositorVideoGenerator(
         jobs_dir=settings.data_dir / "compositor_jobs",
         enable_tts=True,
+        enable_captions=True,
     )
     print("configured", gen.configured)
     print("scenes", len(payload.scenes), "medias", len(payload.medias))

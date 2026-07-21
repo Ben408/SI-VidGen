@@ -3,6 +3,7 @@ from pathlib import Path
 from src.models import HiggsfieldExplainerPackage, HiggsfieldPayload, Scene
 from src.video.local_compositor import (
     LocalCompositorVideoGenerator,
+    _build_caption_overlay,
     _resolve_local_source,
     _scene_duration_seconds,
 )
@@ -11,6 +12,18 @@ from src.video.local_compositor import (
 def test_scene_duration_bounds() -> None:
     assert _scene_duration_seconds("one two") == 5.0
     assert _scene_duration_seconds(" ".join(["word"] * 200)) == 20.0
+
+
+def test_caption_overlay_draws_bar() -> None:
+    overlay = _build_caption_overlay(
+        640,
+        360,
+        "Prepare the CSV header and import the journal entries carefully.",
+    )
+    assert overlay.size == (640, 360)
+    # Semi-transparent caption pixels should exist near the bottom.
+    sample = overlay.getpixel((320, 340))
+    assert sample[3] > 0
 
 
 def test_local_compositor_renders_sample_scenes(tmp_path: Path) -> None:
@@ -69,6 +82,9 @@ def test_local_compositor_renders_sample_scenes(tmp_path: Path) -> None:
         script="narration",
         scenes=scenes,
         medias=[str(image_a), str(image_b)],
+        captions=True,
+        tts_voice="en-US-AriaNeural",
+        tts_rate="-10%",
         explainer_package_path=None,
     )
     # Write package so client can load assets via path if needed
@@ -79,11 +95,15 @@ def test_local_compositor_renders_sample_scenes(tmp_path: Path) -> None:
     generator = LocalCompositorVideoGenerator(
         jobs_dir=tmp_path / "jobs",
         enable_tts=False,
+        enable_captions=True,
     )
     assert generator.configured
     submitted = generator.generate(payload)
     assert submitted["mode"] == "scene_chunked"
     job_id = str(submitted["generation_id"])
+    job = (tmp_path / "jobs" / f"{job_id}.json").read_text(encoding="utf-8")
+    assert "en-US-AriaNeural" in job
+    assert "-10%" in job
     waited = generator.wait_for_result(job_id)
     local = Path(str(waited["local_path"]))
     assert local.is_file()

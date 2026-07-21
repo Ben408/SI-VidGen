@@ -8,7 +8,7 @@ from config.settings import Settings
 from src.classifier.classify_issue import classify_issue
 from src.intake.intake_handler import normalize_issue
 from src.llm.client import OllamaClient
-from src.models import IssueInput, RunResult, Script, ScriptEdit
+from src.models import IssueInput, ReviewAction, RunResult, Script, ScriptEdit
 from src.rag.asset_binding import (
     assign_library_assets,
     filter_retrieved_to_library,
@@ -215,7 +215,14 @@ class Orchestrator:
         log_event("script_edited", run_id=run_id, script_version=version)
         return updated
 
-    def approve(self, run_id: str, generate_video: bool = False) -> RunResult:
+    def approve(
+        self,
+        run_id: str,
+        generate_video: bool = False,
+        *,
+        action: ReviewAction | None = None,
+    ) -> RunResult:
+        review = action or ReviewAction(generate_video=generate_video)
         result = self._require_completed(run_id).model_copy(
             update={"review_status": "approved"}
         )
@@ -225,9 +232,19 @@ class Orchestrator:
             run_id=run_id,
             script_version=result.script_version,
         )
-        return self.submit_generation(run_id) if generate_video else result
+        return (
+            self.submit_generation(run_id, render=review)
+            if review.generate_video
+            else result
+        )
 
-    def submit_generation(self, run_id: str, *, allow_auto: bool = False) -> RunResult:
+    def submit_generation(
+        self,
+        run_id: str,
+        *,
+        allow_auto: bool = False,
+        render: ReviewAction | None = None,
+    ) -> RunResult:
         result = self._require_completed(run_id)
         if result.review_status != "approved" and not (
             allow_auto and result.auto_generate
@@ -245,14 +262,22 @@ class Orchestrator:
         pending = result.model_copy(update={"generation_status": "pending"})
         self._write_result(pending)
         try:
+            payload_updates: dict[str, object] = {
+                "explainer_package_path": result.explainer_package_path,
+            }
+            if render is not None:
+                if render.tts_voice:
+                    payload_updates["tts_voice"] = render.tts_voice
+                if render.tts_rate:
+                    payload_updates["tts_rate"] = render.tts_rate
+                if render.captions is not None:
+                    payload_updates["captions"] = render.captions
             response = self.video_generator.generate(
                 build_higgsfield_payload(
                     script,
                     self.image_library,
                     visual_coverage=result.visual_coverage,
-                ).model_copy(
-                    update={"explainer_package_path": result.explainer_package_path}
-                )
+                ).model_copy(update=payload_updates)
             )
             generation_id = response.get("id") or response.get("generation_id")
             raw_job_ids = response.get("generation_job_ids")
