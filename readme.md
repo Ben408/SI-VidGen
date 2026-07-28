@@ -200,6 +200,18 @@ Local scratch (probes, old outputs) lives under gitignored `archive/`.
 
 ---
 
+## Sibling projects (local + GitHub)
+
+| Repo | Role |
+|---|---|
+| **SI-VidGen** (this) | Ask / video / corpus engine + HTTP API |
+| **SI-VidGen-Slack** | Slack Socket Mode connector → calls this API’s `/api/ask` |
+| **Future Agent** | Orchestrates Slack + VidGen + Phrase TMS MCP (not started) |
+
+Slack tokens and allowlists live only in the Slack repo. This repo stays free of Slack SDKs.
+
+---
+
 ## Verify
 
 ```powershell
