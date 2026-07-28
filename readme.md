@@ -1,45 +1,157 @@
 # SI VidGen — Intacct Knowledge Studio
 
-Local-first prototype that helps **Sage Intacct** information developers and project managers:
+Local-first prototype for **Sage Intacct** information developers, project managers, and internal staff.
 
-1. **Create video** — turn a support issue into a grounded script and Help-faithful walkthrough MP4.
-2. **Ask Intacct** — answer product-usage questions with multi-hop Help retrieval (no video).
-3. **Refresh Help corpus** — re-scrape live Help and rebuild local Chroma, image library, and OKF assets.
+![Intacct Knowledge Studio UI — Create video tab](docs/images/knowledge-studio-ui.png)
 
-Default video path preserves Help Center screenshots via a **local compositor** (Ken Burns + neural TTS + captions). Optional Higgsfield generation remains available but is secondary when UI fidelity matters.
-
----
-
-## Goal
-
-Build a **local-first prototype** that:
-
-1. Accepts issues/questions via the **web UI** (two tabs + footer admin control).
-2. Classifies with a **local LLM** (Ollama, models ≤ ~12B).
-3. Retrieves authorized Intacct Help via **RAG** over Flare **XHTML** in **Chroma**, enriched by a parallel **OKF** concept bundle.
-4. **Video tab:** generates a reviewable script, binds Help image-library screenshots, renders local MP4.
-5. **Ask tab:** returns structured answers (summary → steps → notes) with live Help links; refuses when Help coverage is insufficient.
-6. **Footer:** confirmed full corpus refresh (crawl → index → image library → OKF), blocking other LLM work while running.
-7. Emits **structured JSON telemetry**, keeps thorough tests/docs, and stays GitHub-ready.
-
-**Non-goals for V0:** multi-tenant SaaS, end-customer portals, live LMS publish, cloud LLM inference, Flare source (`.fl*`) ingest, inventing screenshots not in Help.
-
----
-
-## Confirmed constraints
-
-| Constraint | Decision |
+| Tab / control | What it does |
 |---|---|
-| Runtime | Local Python **3.11+** venv |
-| Hardware | RTX 4070–class; chat models **≤ ~12B** |
-| LLM | Ollama — `gemma3:12b` primary, `llama3.2:latest` fallback, `nomic-embed-text` |
-| Corpus | Published Flare XHTML under `/ia/docs/en_US/help_action/` |
-| Knowledge layers | Chroma (retrieval) + OKF under `data/okf/` (parallel concepts) + `data/help_assets/` |
-| Vector store | **Chroma** now → **Pinecone** later (`VectorStore` protocol) |
-| Video default | `VIDEO_BACKEND=local_compositor` |
-| Video optional | `VIDEO_BACKEND=higgsfield` |
-| UI | React + Vite; FastAPI |
-| Deploy desire | GitHub Actions; full cloud (Vercel + hosted API) later — no split UI/backend production |
+| **Create video** | Support issue → grounded script → Help-faithful local MP4 |
+| **Ask Intacct** | Product how-to answers from Help (multi-hop RAG; refuse if coverage is thin) |
+| **Footer → Re-ingest Help** | Refresh local Help cache, Chroma index, image library, and OKF |
+
+---
+
+## Runs without commercial cloud AI tokens
+
+The **default demo path is fully local**. Classification, embeddings, script/Q&A generation, and video composition do **not** call OpenAI, Anthropic, Google Gemini, Higgsfield, or other paid generative APIs.
+
+| Capability | Default provider | Consumes commercial AI tokens? |
+|---|---|---|
+| Chat / classify / script / Ask | **Ollama** on your machine | **No** |
+| Embeddings | **Ollama** `nomic-embed-text` | **No** |
+| Vector search | **Chroma** on disk | **No** |
+| Walkthrough video | **Local compositor** (Help PNGs + Edge TTS) | **No** |
+| Help crawl / OKF / image library | Your disk + public Help URLs | **No** (HTTP fetch of authorized Help only) |
+
+Optional `VIDEO_BACKEND=higgsfield` exists for experiments, but it is **not required** and is **off by default**. Leave it unset (or `local_compositor`) for shared testing with a collaborator.
+
+You may still need normal network access to:
+
+- `git clone` / `npm install` / `pip install`
+- Crawl the authorized Intacct Help site when building or refreshing the corpus
+- Edge neural TTS (Microsoft Edge online voices). If offline, the compositor falls back to local TTS.
+
+None of those are generative “token” bills from a commercial LLM/video vendor.
+
+---
+
+## What you get
+
+1. **Create video** — RAG over Flare-published Help XHTML (Chroma) + OKF enrichment → reviewable script → local MP4 that preserves Help screenshots.
+2. **Ask Intacct** — multi-hop Help Q&A with structured **summary → steps → notes** and live Help links; refuses when evidence is weak (coverage diagnostic).
+3. **Corpus refresh** — footer control re-scrapes Help and rebuilds Chroma, `help_assets`, and OKF (blocks other LLM work while running).
+
+**Non-goals for V0:** multi-tenant SaaS, end-customer portals, live LMS publish, cloud LLM inference as the default, Flare authoring-source ingest, inventing UI screenshots.
+
+---
+
+## Run on another computer (collaborator setup)
+
+Use a Windows machine with a recent GPU if possible (RTX 4070–class is the reference). CPU-only Ollama works for smoke tests but will be slow.
+
+### 1. Prerequisites
+
+| Tool | Notes |
+|---|---|
+| **Git** | Clone this repo |
+| **Python 3.11+** | `py -3.11` on Windows |
+| **Node.js 20+** | For the Vite UI (`npm`) |
+| **[Ollama](https://ollama.com/)** | Local LLM runtime |
+| **ffmpeg** | Usually pulled via `imageio-ffmpeg`; system ffmpeg also fine |
+
+### 2. Clone and install
+
+```powershell
+git clone https://github.com/Ben408/SI-VidGen.git
+cd SI-VidGen
+
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements-dev.txt
+
+cd web
+npm install
+cd ..
+
+Copy-Item .env.example .env
+```
+
+Confirm `.env` keeps the local defaults:
+
+- `VIDEO_BACKEND=local_compositor`
+- `OLLAMA_BASE_URL=http://127.0.0.1:11434`
+- Leave `HIGGSFIELD_API_KEY` empty
+
+### 3. Pull Ollama models
+
+```powershell
+ollama pull gemma3:12b
+ollama pull llama3.2:latest
+ollama pull nomic-embed-text
+```
+
+On a smaller machine you can temporarily point `.env` at `llama3.2:latest` as `OLLAMA_CHAT_MODEL` for faster (lower-quality) iteration.
+
+### 4. Build local Help knowledge (first time)
+
+Authorized English Help only (published XHTML). This downloads Help pages/images—not cloud LLM tokens.
+
+```powershell
+# Full crawl + index (lengthy; polite delay)
+python -m src.rag.index_help --full
+
+# Screenshot library for video binding
+python -m src.rag.build_image_library
+
+# Parallel OKF concepts (procedure / asset metadata)
+python -m src.rag.build_okf
+```
+
+For a quick smoke test instead of the full corpus:
+
+```powershell
+python -m src.rag.index_help --max-pages 25
+python -m src.rag.build_image_library --max-downloads 20
+python -m src.rag.build_okf --max-pages 25
+```
+
+### 5. Start the app
+
+**Option A — launcher**
+
+```powershell
+.\start-si-vidgen.bat
+```
+
+**Option B — two terminals**
+
+```powershell
+# Terminal 1 — API
+.\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH = (Get-Location).Path
+python main.py
+
+# Terminal 2 — UI
+cd web
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Open **http://127.0.0.1:5173/**
+
+### 6. Smoke-check together
+
+1. **Create video** — paste the sample from [`docs/sample_query.md`](docs/sample_query.md); generate draft; confirm sources + local compositor path.
+2. **Ask Intacct** — ask a how-to question; confirm steps + Help links (or a coverage refusal).
+3. Do **not** turn on Higgsfield unless you intentionally want a cloud video experiment.
+
+### Sharing notes for collaborators
+
+- Runtime corpora (`data/help_xhtml/`, `data/help_assets/`, `data/okf/`, `data/vector_store/`) are **gitignored**—each machine builds its own (or copies a prebuilt data drop offline by agreement).
+- Never commit `.env` or API keys.
+- Prefer the same Ollama model names as `.env.example` so results are comparable.
+- Corpus refresh from the UI footer is available to everyone in the prototype; it is lengthy and blocks video/Ask while running.
 
 ---
 
@@ -62,34 +174,7 @@ flowchart TD
     Img --> OKF[Rebuild OKF]
 ```
 
-Shared **work gate** ensures video, ask, and refresh do not overlap on the local LLM.
-
----
-
-## Local setup
-
-```powershell
-cd f:\SI_VidGen
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-Copy-Item .env.example .env
-cd web; npm install; cd ..
-
-python main.py          # API
-# second terminal:
-cd web; npm run dev     # http://localhost:5173
-```
-
-Corpus bootstrap:
-
-```powershell
-python -m src.rag.index_help --full
-python -m src.rag.build_image_library
-python -m src.rag.build_okf
-```
-
-Or use **Re-ingest Help** in the UI footer (lengthy; confirms before starting).
+A shared **work gate** keeps video, Ask, and refresh from overlapping on the local LLM.
 
 ---
 
@@ -103,7 +188,7 @@ Or use **Re-ingest Help** in the UI footer (lengthy; confirms before starting).
 | `docs/architecture.md` | Runtime design |
 | `docs/api.md` | HTTP contracts |
 | `docs/operator_guide.md` | Info-dev / PM workflow |
-| `docs/developer_guide.md` | Setup, index, verify |
+| `docs/developer_guide.md` | Setup detail |
 | `docs/corpus_flare_xhtml.md` | Crawl / re-index |
 | `docs/okf.md` | OKF parallel bundle |
 | `docs/image_library.md` | Screenshot library |
@@ -111,16 +196,18 @@ Or use **Re-ingest Help** in the UI footer (lengthy; confirms before starting).
 | `docs/multilingual.md` | FR/DE/ES-ES (deferred) |
 | `docs/telemetry.md` | Run events / privacy |
 
-Obsolete early stubs and local probe artifacts live under gitignored `archive/`.
+Local scratch (probes, old outputs) lives under gitignored `archive/`.
 
 ---
 
-## Testing
+## Verify
 
 ```powershell
 ruff check .
 pytest --cov=src
-cd web; npm run lint; npm run build
+cd web
+npm run lint
+npm run build
 ```
 
-CI (GitHub Actions): lint + unit/integration/e2e without paid APIs.
+CI (GitHub Actions) runs lint + tests **without** paid AI APIs.
