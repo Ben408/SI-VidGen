@@ -9,14 +9,15 @@ Create a polished 10-slide client presentation for business, support, and conten
 - Avoid: futuristic robots, excessive AI imagery, unsupported ROI claims, and dense technical diagrams.
 - Use short headlines and minimal body copy. Turn supporting details into diagrams, process graphics, and metric cards.
 - Clearly distinguish the local-first prototype from the future production vision.
-- Refer to the product as **SI VidGen** where a product name is useful.
+- Refer to the product as **SI VidGen** / **Intacct Knowledge Studio** where a product name is useful.
+- Mention both **Create video** and **Ask Intacct**, plus Help corpus refresh for admins.
 
 ---
 
 ## Slide 1 — AI-Generated Support Videos for Accounting Software
 
 ### Subtitle
-Turn trusted help content and real user issues into clear, reviewable video guidance.
+Turn trusted help content into reviewable video guidance—and accurate product how-to answers for internal staff.
 
 ### Supporting line
 Reducing the effort required to create support videos while improving speed, consistency, and customer experience.
@@ -82,14 +83,13 @@ The differentiator is grounded generation. The system does not ask a model to in
 From a support issue to a reviewable video package in one guided workflow.
 
 ### Pipeline
-1. **Capture** — An operator enters a representative user issue in a browser-based interface.
-2. **Understand** — A local Ollama model classifies the feature area, intent, and likely error type.
-3. **Ground** — RAG retrieves relevant content from authorized Flare XHTML Help Center output.
-4. **Author** — AI generates narration, actions, and a scene plan grounded in the retrieved source.
-5. **Attach visuals** — Usable Help Center screenshots are bound from the local image library.
-6. **Render** — The default path composes a local MP4 (Ken Burns + neural voice + captions) that preserves Help pixels; optional Higgsfield packages remain available.
-7. **Review and approve** — Information developers or project managers inspect the script, scenes, sources, and play the video in the UI.
-8. **Publish locally and measure** — Approved artifacts are stored locally with privacy-safe run telemetry.
+1. **Capture** — Operator chooses **Create video** or **Ask Intacct**.
+2. **Understand** — Local Ollama classifies the request.
+3. **Ground** — RAG over Flare XHTML (Chroma) enriched with OKF procedures/assets.
+4. **Author (video)** — Script + Help screenshot binding + local compositor MP4.
+5. **Answer (Ask)** — Structured summary/steps/notes, or refuse when Help coverage is thin.
+6. **Refresh** — Admins re-ingest live Help from the footer control when docs change.
+7. **Review** — Humans approve video scripts; Ask answers cite live Help links.
 
 ### Guardrails
 - Local LLM processing for the prototype

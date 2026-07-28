@@ -43,6 +43,22 @@ class FakePipelineLLM:
                     }
                 ],
             }
+        elif response_model.__name__ == "FollowUpPlan":
+            data = {"additional_queries": ["General Ledger journal entry totals"]}
+        elif response_model.__name__ == "AnswerDraft":
+            data = {
+                "summary": "Correct unbalanced journal totals before posting.",
+                "steps": [
+                    {
+                        "instruction": "Open the journal entry.",
+                        "detail": "Compare total debits and total credits.",
+                        "source_ids": ["chunk-1"],
+                    }
+                ],
+                "notes": ["Use only official Help steps for posting corrections."],
+                "coverage_sufficient": True,
+                "coverage_gap": "",
+            }
         else:
             raise AssertionError(f"Unexpected response model {response_model.__name__}")
         return response_model.model_validate(data), "fake-local-model"

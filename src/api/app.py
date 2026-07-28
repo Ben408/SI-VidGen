@@ -7,15 +7,20 @@ from fastapi.responses import FileResponse
 from config.settings import Settings, get_settings
 from src.llm.client import OllamaClient
 from src.models import (
+    AskResult,
     IssueInput,
     ProgressEvent,
+    RefreshResult,
     ReviewAction,
     RunResult,
     Script,
     ScriptEdit,
 )
 from src.orchestrator import Orchestrator
+from src.qa.ask_agent import AskService
+from src.rag.corpus_refresh import CorpusRefreshService
 from src.rag.vector_store import VectorStore
+from src.runtime_gate import WorkGate
 from src.scriptgen.script_builder import GroundingError
 from src.telemetry.logging import configure_logging
 from src.telemetry.progress import ProgressTracker
@@ -29,6 +34,9 @@ def create_app(
     llm: OllamaClient | None = None,
     vector_store: VectorStore | None = None,
     video_generator: VideoGenerator | None = None,
+    ask_service: AskService | None = None,
+    refresh_service: CorpusRefreshService | None = None,
+    work_gate: WorkGate | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     settings.ensure_runtime_directories()
@@ -36,6 +44,7 @@ def create_app(
 
     run_store = JsonRunStore(settings.runs_dir)
     tracker = ProgressTracker(run_store)
+    gate = work_gate or WorkGate()
     orchestrator = Orchestrator(
         settings,
         run_store,
@@ -43,6 +52,18 @@ def create_app(
         llm,
         vector_store,
         video_generator,
+        work_gate=gate,
+    )
+    ask = ask_service or AskService(
+        settings,
+        run_store,
+        tracker,
+        gate,
+        llm=llm,
+        vector_store=vector_store,
+    )
+    refresh = refresh_service or CorpusRefreshService(
+        settings, run_store, tracker, gate
     )
 
     app = FastAPI(title="SI VidGen API", version="0.1.0")
@@ -66,6 +87,7 @@ def create_app(
             "higgsfield_generation": available,
             "video_generation": available,
             "video_backend": settings.video_backend,
+            "workspace": gate.status(),
         }
         if backend not in {"higgsfield", "hf", "gemini_omni"}:
             from src.video.local_compositor import compositor_capability_defaults
@@ -76,6 +98,52 @@ def create_app(
                 captions=settings.local_compositor_captions,
             )
         return payload
+
+    @app.get("/api/workspace")
+    def workspace_status() -> dict[str, object]:
+        return gate.status()
+
+    @app.post("/api/ask", status_code=202)
+    def create_ask(issue: IssueInput, background_tasks: BackgroundTasks) -> AskResult:
+        ask_id = ask.create_ask_id()
+        queued = ask.queue(ask_id)
+        background_tasks.add_task(ask.run, ask_id, issue)
+        return queued
+
+    @app.get("/api/ask/{ask_id}", response_model=AskResult)
+    def get_ask(ask_id: str) -> AskResult:
+        result = ask.get_result(ask_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Ask not found")
+        return result
+
+    @app.get("/api/ask/{ask_id}/progress", response_model=list[ProgressEvent])
+    def get_ask_progress(ask_id: str) -> list[ProgressEvent]:
+        record = run_store.read(ask_id)
+        if "result" not in record:
+            raise HTTPException(status_code=404, detail="Ask not found")
+        return [ProgressEvent.model_validate(item) for item in record.get("events", [])]
+
+    @app.post("/api/corpus/refresh", status_code=202)
+    def start_corpus_refresh(background_tasks: BackgroundTasks) -> RefreshResult:
+        refresh_id = refresh.create_refresh_id()
+        queued = refresh.queue(refresh_id)
+        background_tasks.add_task(refresh.run, refresh_id)
+        return queued
+
+    @app.get("/api/corpus/refresh/{refresh_id}", response_model=RefreshResult)
+    def get_corpus_refresh(refresh_id: str) -> RefreshResult:
+        result = refresh.get_result(refresh_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Refresh not found")
+        return result
+
+    @app.get("/api/corpus/refresh/{refresh_id}/progress", response_model=list[ProgressEvent])
+    def get_corpus_refresh_progress(refresh_id: str) -> list[ProgressEvent]:
+        record = run_store.read(refresh_id)
+        if "result" not in record:
+            raise HTTPException(status_code=404, detail="Refresh not found")
+        return [ProgressEvent.model_validate(item) for item in record.get("events", [])]
 
     @app.post("/api/runs", status_code=202)
     def create_run(issue: IssueInput, background_tasks: BackgroundTasks) -> RunResult:
@@ -174,6 +242,52 @@ def create_app(
             return {"available": False, "message": "Help image library not built yet"}
         coverage = library.coverage()
         return {"available": True, **coverage}
+
+    @app.get("/api/okf/status")
+    def okf_status() -> dict[str, object]:
+        store = orchestrator.okf_store
+        if store is None:
+            return {
+                "available": False,
+                "bundle_dir": str(settings.okf_dir),
+                "message": "OKF bundle not built yet. Run: python -m src.rag.build_okf",
+            }
+        return store.status()
+
+    @app.get("/api/okf/concepts")
+    def list_okf_concepts(
+        type: str | None = None,
+        page_url: str | None = None,
+        q: str | None = None,
+        derived_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        store = orchestrator.okf_store
+        if store is None or not store.available:
+            raise HTTPException(status_code=404, detail="OKF bundle not available")
+        concepts = store.list_concepts(
+            concept_type=type,
+            page_url=page_url,
+            query=q,
+            derived_only=derived_only,
+            limit=min(max(limit, 1), 200),
+            offset=max(offset, 0),
+        )
+        return {"count": len(concepts), "concepts": concepts}
+
+    @app.get("/api/okf/concepts/{concept_id:path}")
+    def get_okf_concept(concept_id: str) -> dict[str, object]:
+        store = orchestrator.okf_store
+        if store is None or not store.available:
+            raise HTTPException(status_code=404, detail="OKF bundle not available")
+        concept = store.get_concept(concept_id)
+        if concept is None:
+            raise HTTPException(status_code=404, detail="Concept not found")
+        payload = concept.summary()
+        payload["body"] = concept.body
+        payload["frontmatter"] = concept.frontmatter or {}
+        return payload
 
     @app.get("/api/runs/{run_id}/script", response_model=Script)
     def get_script(run_id: str) -> Script:

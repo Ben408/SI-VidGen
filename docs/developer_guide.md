@@ -16,56 +16,58 @@ cd ..
 
 ### Corporate TLS / npm leaf-signature failures
 
-If `npm install` fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, export Windows roots and point Node at the bundle:
+If `npm install` fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, export Windows roots and set `NODE_EXTRA_CA_CERTS` / `PIP_CERT` (see historical notes in git history or corporate IT docs). Do not disable TLS verification.
+
+## Build local knowledge assets
 
 ```powershell
-$pem = Join-Path $env:TEMP 'windows-ca-bundle.pem'
-Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root | ForEach-Object {
-  $bytes = $_.Export('Cert')
-  $b64 = [Convert]::ToBase64String($bytes, 'InsertLineBreaks')
-  Add-Content -Path $pem -Value "-----BEGIN CERTIFICATE-----`n$b64`n-----END CERTIFICATE-----`n"
-}
-$env:NODE_EXTRA_CA_CERTS = $pem
-$env:PIP_CERT = $pem
-cd web
-npm install
-```
-
-Keep these variables in the terminal when running `pip install`. Do not disable TLS verification in npm or pip.
-
-## Build the local help index
-
-```powershell
-# Default: safe 10-page cap
+# Safe 10-page index (dev)
 python -m src.rag.index_help
 
-# Explicit full crawl and stale-source cleanup
+# Full crawl + stale cleanup
 python -m src.rag.index_help --full
+
+# Screenshot library
+python -m src.rag.build_image_library
+
+# OKF parallel concepts (rules-only; refs help_assets)
+python -m src.rag.build_okf
 ```
+
+UI footer **Re-ingest Help** runs the full chain (crawl → index → library → OKF).
 
 ## Run
 
-Terminal 1:
-
 ```powershell
-.\.venv\Scripts\Activate.ps1
+# Terminal 1
 python main.py
-```
 
-Terminal 2:
-
-```powershell
+# Terminal 2
 cd web
 npm run dev
 ```
 
 Open `http://localhost:5173`.
 
+## Package map (high level)
+
+| Path | Role |
+|---|---|
+| `src/api/` | FastAPI routes |
+| `src/orchestrator.py` | Video/script pipeline |
+| `src/qa/` | Ask Intacct agent |
+| `src/rag/` | Crawl, chunk, Chroma, OKF, images, corpus refresh |
+| `src/runtime_gate.py` | Serialize video / ask / refresh |
+| `src/video/` | Payload + local compositor + optional Higgsfield |
+| `web/src/` | Operator UI |
+
+Gitignored runtime data: `data/help_xhtml/`, `data/help_assets/`, `data/okf/`, `data/vector_store/`. Local scratch under `archive/` is also gitignored.
+
 ## Verify
 
 ```powershell
-.\.venv\Scripts\python -m ruff check .
-.\.venv\Scripts\python -m pytest --cov=src
+ruff check .
+pytest --cov=src
 cd web
 npm run lint
 npm run build

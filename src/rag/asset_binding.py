@@ -44,9 +44,10 @@ def assign_library_assets(
 ) -> Script:
     if library is None:
         return script
+    chunks_by_id = {chunk.source_id: chunk for chunk in retrieved}
     usable_by_source: dict[str, list[str]] = {}
     for chunk in retrieved:
-        ranked: list[tuple[int, str]] = []
+        ranked: list[tuple[int, int, str]] = []
         for url in chunk.asset_urls:
             asset = library.get_by_url(url)
             if (
@@ -55,9 +56,12 @@ def assign_library_assets(
                 or not Path(asset.local_path).is_file()
             ):
                 continue
-            ranked.append((CLASS_PRIORITY.get(asset.asset_class, 9), url))
-        ranked.sort(key=lambda item: (item[0], item[1]))
-        usable_by_source[chunk.source_id] = [url for _, url in ranked]
+            heading_boost = _heading_rank(chunk.heading_path, asset.heading_path)
+            ranked.append(
+                (heading_boost, CLASS_PRIORITY.get(asset.asset_class, 9), url)
+            )
+        ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+        usable_by_source[chunk.source_id] = [url for _, _, url in ranked]
 
     used: set[str] = set()
     scenes = []
@@ -68,13 +72,29 @@ def assign_library_assets(
             scenes.append(scene)
             continue
         candidate = None
+        scored: list[tuple[int, int, str]] = []
         for source_id in scene.source_ids:
+            chunk = chunks_by_id.get(source_id)
             for url in usable_by_source.get(source_id, []):
-                if url not in used and _asset_available(library, url):
-                    candidate = url
-                    break
-            if candidate:
-                break
+                if url in used or not _asset_available(library, url):
+                    continue
+                asset = library.get_by_url(url)
+                visual_boost = _heading_rank(
+                    scene.visual,
+                    asset.heading_path if asset else "",
+                )
+                class_rank = CLASS_PRIORITY.get(
+                    asset.asset_class if asset else "",
+                    9,
+                )
+                chunk_boost = _heading_rank(
+                    chunk.heading_path if chunk else "",
+                    asset.heading_path if asset else "",
+                )
+                scored.append((min(visual_boost, chunk_boost), class_rank, url))
+        scored.sort(key=lambda item: (item[0], item[1], item[2]))
+        if scored:
+            candidate = scored[0][2]
         if candidate:
             used.add(candidate)
         scenes.append(scene.model_copy(update={"help_asset": candidate}))
@@ -162,6 +182,24 @@ def library_urls_for_script(
         seen.add(url)
         urls.append(url)
     return urls
+
+
+def _heading_rank(left: str, right: str) -> int:
+    """Lower is better. 0 = strong overlap, 50 = none."""
+    if not left or not right:
+        return 40
+    a = left.lower()
+    b = right.lower()
+    if a == b or a in b or b in a:
+        return 0
+    left_parts = {part.strip() for part in a.replace(">", " ").split() if part.strip()}
+    right_parts = {part.strip() for part in b.replace(">", " ").split() if part.strip()}
+    shared = left_parts & right_parts
+    if len(shared) >= 2:
+        return 5
+    if shared:
+        return 15
+    return 50
 
 
 def _asset_available(library: HelpImageLibrary, url: str) -> bool:

@@ -46,6 +46,19 @@ class SourceReference(BaseModel):
     score: float
 
 
+class OkfConceptRef(BaseModel):
+    """Derived OKF concept visible to operators (not always a discrete Help page)."""
+
+    concept_id: str
+    type: str
+    title: str
+    page_url: str = ""
+    heading_path: str = ""
+    path: str | None = None
+    source_id: str | None = None
+    help_title: str | None = None
+
+
 class RetrievedChunk(SourceReference):
     text: str
     asset_urls: list[str] = Field(default_factory=list)
@@ -146,7 +159,44 @@ class RunResult(BaseModel):
     video_url: str | None = None
     classification: Classification | None = None
     sources: list[SourceReference] = Field(default_factory=list)
+    okf_concepts: list[OkfConceptRef] = Field(default_factory=list)
     visual_coverage: Literal["green", "yellow", "red"] = "red"
     media_count: int = 0
+    error_code: str | None = None
+    error_detail: str | None = None
+
+
+class KnowledgeStep(BaseModel):
+    instruction: str
+    detail: str = ""
+    source_ids: list[str] = Field(min_length=1)
+
+
+class KnowledgeAnswer(BaseModel):
+    summary: str
+    steps: list[KnowledgeStep]
+    notes: list[str] = Field(default_factory=list)
+    generation_model: str
+    sources: list[SourceReference] = Field(default_factory=list)
+
+
+class AskResult(BaseModel):
+    ask_id: str
+    status: Literal["queued", "processing", "completed", "refused", "failed"]
+    classification: Classification | None = None
+    answer: KnowledgeAnswer | None = None
+    sources: list[SourceReference] = Field(default_factory=list)
+    okf_concepts: list[OkfConceptRef] = Field(default_factory=list)
+    followup_queries: list[str] = Field(default_factory=list)
+    coverage_gap: str | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
+
+
+class RefreshResult(BaseModel):
+    refresh_id: str
+    status: Literal["queued", "processing", "completed", "failed"]
+    message: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = None
     error_detail: str | None = None

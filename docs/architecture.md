@@ -1,21 +1,40 @@
 # Architecture
 
-## V0 runtime
+## Runtime (current)
 
-- React + Vite operator UI
-- FastAPI backend
-- Local Ollama inference (implemented in later phases)
-- Flare-published XHTML crawler → embeddings → Chroma (implemented in Phase 1)
-- Higgsfield payload JSON written to `output/payloads/`
-- Metadata-only run telemetry under `data/runs/`
+- **UI:** React + Vite — tabs **Create video** / **Ask Intacct**, footer **Re-ingest Help**
+- **API:** FastAPI (`src/api/app.py`)
+- **LLM:** Local Ollama (classify, script, Q&A, embeddings)
+- **Corpus:** Flare-published XHTML → chunk/embed → **Chroma**
+- **Parallel OKF:** rules-only concepts under `data/okf/` (procedure text + section-scoped assets)
+- **Images:** shared `data/help_assets/` library (not copied into OKF)
+- **Video:** default **local compositor** MP4; optional Higgsfield
+- **Concurrency:** `WorkGate` serializes video / ask / corpus refresh on the local GPU/LLM
+- **Telemetry:** metadata-only JSON under `data/runs/`
 
-## Boundaries
+## Knowledge path
 
-Provider and storage interfaces must preserve future migration paths:
+```text
+Live Help (XHTML)
+    ├─► data/help_xhtml/          cache
+    ├─► Chroma                    semantic retrieval
+    ├─► data/help_assets/         screenshots for video
+    └─► data/okf/                 concept markdown (parallel)
+         └─ enrich retrieved chunks → binder / Q&A
+```
 
-- Chroma → Pinecone
-- Local Ollama → hosted model inference
-- Local FastAPI → hosted API
-- Local filesystem artifacts → managed object storage
+## Product surfaces
 
-Vercel is a future full-cloud target, not a production UI connected to a local backend.
+| Surface | Behavior |
+|---|---|
+| Create video | Issue → classify → retrieve+OKF → script → binder → review → local MP4 |
+| Ask Intacct | Question → classify → multi-hop retrieve+OKF → structured answer or refuse |
+| Footer refresh | Confirm → crawl → Chroma → image library → OKF (blocks other work) |
+
+## Migration boundaries
+
+- Chroma → Pinecone (`VectorStore` protocol)
+- Local Ollama → hosted inference
+- FastAPI → hosted API
+- Local files → object storage
+- Vercel only after API/model/storage are hosted (no split UI/local-backend production)

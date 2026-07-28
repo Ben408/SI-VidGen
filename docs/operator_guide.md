@@ -1,25 +1,51 @@
 # Operator Guide
 
-## V0 workflow
+## Surfaces
 
-1. Open the local SI VidGen web UI.
-2. Enter the support issue and optional Intacct module.
-3. Leave **Generate video automatically** off for the normal review flow.
-4. Select **Generate video draft**.
-5. Follow stage progress in the run panel.
-6. Review the official Help sources and editable script.
-7. Edit the title, narration, scene actions, visuals, or voiceover.
-8. Select **Save new version**. This preserves the prior script and rebuilds the
-   Higgsfield payload from the edited script.
-9. Select **Approve script**, or **Approve & send to Higgsfield** after live
-   generation is configured.
+| UI | Use when |
+|---|---|
+| **Create video** | You need a grounded script and walkthrough MP4 |
+| **Ask Intacct** | You need a how-to answer (no video) |
+| **Footer → Re-ingest Help** | Admins refresh local Help after a publish |
 
-Scene source IDs and Help assets remain constrained to the generated grounded
-script. Unsupported source IDs or newly invented asset URLs are rejected.
+Video and Ask share the local LLM; corpus refresh **blocks** both until finished.
 
-The automatic-generation toggle is off by default and remains unavailable until
-the Higgsfield API integration is enabled. When enabled, it bypasses manual
-review only for scripts that pass normal schema and grounding validation.
+---
 
-Use [`sample_query.md`](sample_query.md) while representative test data is
-pending.
+## Create video
+
+1. Open the web UI → **Create video**.
+2. Enter the support issue and optional module.
+3. Leave **Generate video automatically** off for review.
+4. Select **Generate video draft**; watch pipeline stages.
+5. Review live Help links, OKF concepts (if present), and medias.
+6. Edit script as needed → **Save new version**.
+7. Set voice / pace / captions if using the local compositor.
+8. **Approve & generate video** (or approve only).
+9. Play/download the MP4 when status is ready.
+
+Visuals come only from the Help image library. Missing screenshots show as yellow/red coverage—do not invent UI.
+
+Demo scenario: [`sample_query.md`](sample_query.md).
+
+---
+
+## Ask Intacct
+
+1. Open **Ask Intacct**.
+2. Enter a product-usage question (cross-module goals are OK).
+3. Select **Get Help-grounded answer**; watch stages (`classify` → `retrieve` → `retrieve_followup` → `answer`).
+4. Read **summary → steps → notes**.
+5. Use **Help references** (live HREFs) and optional OKF concepts to learn more.
+
+If Help coverage is weak, the system **refuses** with a coverage gap message—treat that as a documentation signal, not a failed tool.
+
+---
+
+## Re-ingest Help (footer)
+
+1. Confirm the dialog (full crawl + rebuild is lengthy).
+2. Wait for stages: crawl/index → image library → OKF.
+3. On success, video and Ask use the updated corpus.
+
+Do not start video or Ask while refresh is running.

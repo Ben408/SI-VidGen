@@ -1,14 +1,10 @@
-.venv/
-.env
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+archive/
+.cursor/
 
+# Local runtime / generated artifacts
 data/help_xhtml/
 data/help_assets/
+data/okf/
 data/vector_store/
 data/runs/*.json
 !data/runs/.gitkeep
@@ -21,9 +17,20 @@ output/*
 !output/published/
 output/**/*.json
 output/**/*.txt
+output/**/*.md
+output/**/*.mp4
 output/videos/**
 output/published/**
 !output/**/.gitkeep
+
+.venv/
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 web/node_modules/
 web/dist/

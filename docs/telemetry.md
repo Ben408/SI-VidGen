@@ -1,22 +1,26 @@
 # Telemetry
 
-## Privacy rule
+## On disk
 
-Persistent telemetry is **metadata only**. It must not contain:
+JSON run records under `data/runs/{id}.json` for:
 
-- Full issue text
-- Retrieved help chunks
-- API keys or authorization headers
+- Video runs (`run-…`)
+- Ask sessions (`ask-…`)
+- Corpus refresh jobs (`refresh-…`)
 
-## Run event fields
+Each record holds a `result` object plus ordered `events` (stage progress).
 
-- `run_id`
-- `stage`
-- `status`
-- `timestamp`
-- `duration_ms`
-- `error_code` (only on failure)
+## Event fields
 
-Run records also contain model identifiers, retrieval source IDs/hashes, scores, and final artifact paths as those stages are implemented.
+- `run_id`, `stage`, `status` (`started` \| `completed` \| `failed`)
+- `timestamp`, optional `duration_ms`, optional `error_code`
 
-The web UI polls the progress endpoint in Phase 0. Server-sent events may replace polling if needed.
+## Privacy
+
+Persist metadata, IDs, hashes, timings, model names, outcomes, and stable error codes.
+
+**Do not** persist full issue/question text or retrieved Help chunk bodies in telemetry.
+
+## UI
+
+Create video and Ask panels poll `/progress` endpoints. Corpus refresh shows stages in the footer. `GET /api/workspace` exposes whether the work gate is held.

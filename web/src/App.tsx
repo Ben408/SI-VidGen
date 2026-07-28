@@ -36,10 +36,57 @@ type RunResult = {
     heading_path: string;
     score: number;
   }[];
+  okf_concepts: {
+    concept_id: string;
+    type: string;
+    title: string;
+    page_url: string;
+    heading_path: string;
+    path: string | null;
+    source_id: string | null;
+    help_title: string | null;
+  }[];
   visual_coverage: "green" | "yellow" | "red";
   media_count: number;
   error_code: string | null;
   error_detail: string | null;
+};
+
+type AskResult = {
+  ask_id: string;
+  status: "queued" | "processing" | "completed" | "refused" | "failed";
+  classification: RunResult["classification"];
+  answer: {
+    summary: string;
+    steps: { instruction: string; detail: string; source_ids: string[] }[];
+    notes: string[];
+    generation_model: string;
+  } | null;
+  sources: RunResult["sources"];
+  okf_concepts: RunResult["okf_concepts"];
+  followup_queries: string[];
+  coverage_gap: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+};
+
+type RefreshResult = {
+  refresh_id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  message: string | null;
+  details: Record<string, unknown>;
+  error_code: string | null;
+  error_detail: string | null;
+};
+
+type OkfConceptDetail = {
+  concept_id: string;
+  type: string;
+  title: string;
+  page_url: string;
+  heading_path: string;
+  body: string;
+  frontmatter: Record<string, unknown>;
 };
 
 type Scene = {
@@ -86,6 +133,10 @@ type CompositorCapabilities = {
 };
 
 const terminalStatuses: RunStatus[] = ["completed", "failed"];
+const askTerminal = ["completed", "refused", "failed"] as const;
+const refreshTerminal = ["completed", "failed"] as const;
+
+type AppTab = "video" | "ask";
 
 function SparkIcon() {
   return (
@@ -105,6 +156,7 @@ function ArrowIcon() {
 }
 
 function App() {
+  const [tab, setTab] = useState<AppTab>("video");
   const [issueText, setIssueText] = useState("");
   const [moduleName, setModuleName] = useState("");
   const [run, setRun] = useState<RunResult | null>(null);
@@ -121,6 +173,21 @@ function App() {
   const [ttsVoice, setTtsVoice] = useState("en-US-JennyNeural");
   const [ttsRate, setTtsRate] = useState("-5%");
   const [burnCaptions, setBurnCaptions] = useState(true);
+  const [askText, setAskText] = useState("");
+  const [askModule, setAskModule] = useState("");
+  const [ask, setAsk] = useState<AskResult | null>(null);
+  const [askProgress, setAskProgress] = useState<ProgressEvent[]>([]);
+  const [refresh, setRefresh] = useState<RefreshResult | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<ProgressEvent[]>([]);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [workspaceHolder, setWorkspaceHolder] = useState<string | null>(null);
+  const [okfStatus, setOkfStatus] = useState<{
+    available: boolean;
+    counts?: Record<string, number>;
+    message?: string;
+  } | null>(null);
+  const [okfDetail, setOkfDetail] = useState<OkfConceptDetail | null>(null);
+  const [okfBusy, setOkfBusy] = useState(false);
   const videoReadyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -135,6 +202,13 @@ function App() {
         if (typeof capabilities.video_backend === "string") {
           setVideoBackend(capabilities.video_backend);
         }
+        const workspace = capabilities.workspace as
+          | { busy?: boolean; holder?: string | null }
+          | undefined;
+        if (workspace) {
+          setWorkspaceBusy(Boolean(workspace.busy));
+          setWorkspaceHolder(workspace.holder ?? null);
+        }
         const options = capabilities.compositor as CompositorCapabilities | undefined;
         if (options?.defaults) {
           setCompositor(options);
@@ -144,7 +218,62 @@ function App() {
         }
       })
       .catch(() => setGenerationAvailable(false));
+
+    fetch("/api/okf/status")
+      .then((response) => response.json())
+      .then((status) => setOkfStatus(status))
+      .catch(() =>
+        setOkfStatus({ available: false, message: "OKF status unavailable" })
+      );
   }, []);
+
+  useEffect(() => {
+    const status = run?.status;
+    if (status && terminalStatuses.includes(status) && workspaceHolder === "video") {
+      setWorkspaceBusy(false);
+      setWorkspaceHolder(null);
+    }
+  }, [run?.status, workspaceHolder]);
+
+  useEffect(() => {
+    const status = ask?.status;
+    if (
+      status &&
+      askTerminal.includes(status as (typeof askTerminal)[number]) &&
+      workspaceHolder === "ask"
+    ) {
+      setWorkspaceBusy(false);
+      setWorkspaceHolder(null);
+    }
+  }, [ask?.status, workspaceHolder]);
+
+  useEffect(() => {
+    const status = refresh?.status;
+    if (
+      status &&
+      refreshTerminal.includes(status as (typeof refreshTerminal)[number]) &&
+      workspaceHolder === "refresh"
+    ) {
+      setWorkspaceBusy(false);
+      setWorkspaceHolder(null);
+    }
+  }, [refresh?.status, workspaceHolder]);
+
+  async function openOkfConcept(conceptId: string) {
+    setOkfBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/okf/concepts/${conceptId}`);
+      if (!response.ok) {
+        throw new Error("Unable to load OKF concept");
+      }
+      setOkfDetail(await response.json());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "OKF load failed");
+    } finally {
+      setOkfBusy(false);
+    }
+  }
 
   useEffect(() => {
     const runId = run?.run_id;
@@ -171,13 +300,15 @@ function App() {
   }, [run?.generation_status, run?.run_id]);
 
   useEffect(() => {
-    if (!run || terminalStatuses.includes(run.status)) return;
+    const runId = run?.run_id;
+    const status = run?.status;
+    if (!runId || !status || terminalStatuses.includes(status)) return;
 
     const interval = window.setInterval(async () => {
       try {
         const [runResponse, progressResponse] = await Promise.all([
-          fetch(`/api/runs/${run.run_id}`),
-          fetch(`/api/runs/${run.run_id}/progress`),
+          fetch(`/api/runs/${runId}`),
+          fetch(`/api/runs/${runId}/progress`),
         ]);
         if (!runResponse.ok || !progressResponse.ok) {
           throw new Error("Unable to read pipeline progress");
@@ -190,7 +321,72 @@ function App() {
     }, 500);
 
     return () => window.clearInterval(interval);
-  }, [run]);
+  }, [run?.run_id, run?.status]);
+
+  useEffect(() => {
+    const askId = ask?.ask_id;
+    const status = ask?.status;
+    if (
+      !askId ||
+      !status ||
+      askTerminal.includes(status as (typeof askTerminal)[number])
+    ) {
+      return;
+    }
+    const interval = window.setInterval(async () => {
+      try {
+        const [askResponse, progressResponse] = await Promise.all([
+          fetch(`/api/ask/${askId}`),
+          fetch(`/api/ask/${askId}/progress`),
+        ]);
+        if (!askResponse.ok || !progressResponse.ok) {
+          throw new Error("Unable to read Q&A progress");
+        }
+        setAsk(await askResponse.json());
+        setAskProgress(await progressResponse.json());
+      } catch (pollError) {
+        setError(pollError instanceof Error ? pollError.message : "Q&A progress failed");
+      }
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [ask?.ask_id, ask?.status]);
+
+  useEffect(() => {
+    const refreshId = refresh?.refresh_id;
+    const status = refresh?.status;
+    if (
+      !refreshId ||
+      !status ||
+      refreshTerminal.includes(status as (typeof refreshTerminal)[number])
+    ) {
+      return;
+    }
+    const interval = window.setInterval(async () => {
+      try {
+        const [refreshResponse, progressResponse, workspaceResponse] =
+          await Promise.all([
+            fetch(`/api/corpus/refresh/${refreshId}`),
+            fetch(`/api/corpus/refresh/${refreshId}/progress`),
+            fetch("/api/workspace"),
+          ]);
+        if (!refreshResponse.ok || !progressResponse.ok) {
+          throw new Error("Unable to read corpus refresh progress");
+        }
+        setRefresh(await refreshResponse.json());
+        setRefreshProgress(await progressResponse.json());
+        if (workspaceResponse.ok) {
+          const workspace = await workspaceResponse.json();
+          setWorkspaceBusy(Boolean(workspace.busy));
+          setWorkspaceHolder(workspace.holder ?? null);
+        }
+      } catch (pollError) {
+        setError(
+          pollError instanceof Error ? pollError.message : "Refresh progress failed"
+        );
+      }
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [refresh?.refresh_id, refresh?.status]);
 
   useEffect(() => {
     if (run?.status !== "completed") return;
@@ -234,8 +430,59 @@ function App() {
         throw new Error("The issue could not be submitted");
       }
       setRun(await response.json());
+      setWorkspaceBusy(true);
+      setWorkspaceHolder("video");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Submission failed");
+    }
+  }
+
+  async function submitAsk(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setAskProgress([]);
+    try {
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: askText,
+          module: askModule || null,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error("The question could not be submitted");
+      }
+      setAsk(await response.json());
+      setWorkspaceBusy(true);
+      setWorkspaceHolder("ask");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Ask failed");
+    }
+  }
+
+  async function startCorpusRefresh() {
+    const confirmed = window.confirm(
+      "Re-ingest the full Intacct Help site?\n\n" +
+        "This is a lengthy process: live crawl, Chroma re-index, image library rebuild, and OKF rebuild.\n" +
+        "Video drafting and product Q&A will be blocked until it finishes.\n\n" +
+        "Continue?"
+    );
+    if (!confirmed) return;
+    setError("");
+    setRefreshProgress([]);
+    try {
+      const response = await fetch("/api/corpus/refresh", { method: "POST" });
+      if (!response.ok) {
+        throw new Error("Unable to start corpus refresh");
+      }
+      setRefresh(await response.json());
+      setWorkspaceBusy(true);
+      setWorkspaceHolder("refresh");
+    } catch (refreshError) {
+      setError(
+        refreshError instanceof Error ? refreshError.message : "Refresh failed to start"
+      );
     }
   }
 
@@ -328,7 +575,7 @@ function App() {
             <span className="brand-divider" aria-hidden="true" />
             <span className="intacct-wordmark">Intacct</span>
           </a>
-          <div className="product-name">Video Studio</div>
+          <div className="product-name">Intacct Knowledge Studio</div>
           <span className="prototype-badge">Local prototype</span>
         </div>
       </nav>
@@ -338,10 +585,15 @@ function App() {
           <div className="hero-inner">
             <div className="hero-copy">
               <p className="eyebrow">AI-assisted authoring</p>
-              <h1>Turn support knowledge into clear, useful videos.</h1>
+              <h1>
+                {tab === "video"
+                  ? "Turn support knowledge into clear, useful videos."
+                  : "Ask how to use Sage Intacct—grounded in Help."}
+              </h1>
               <p className="lede">
-                Create a review-ready video draft from a Sage Intacct support issue.
-                Your source content stays local.
+                {tab === "video"
+                  ? "Create a review-ready video draft from a Sage Intacct support issue. Your source content stays local."
+                  : "Get accurate product-usage answers for internal staff, with live Help references and coverage diagnostics."}
               </p>
             </div>
             <div className="hero-mark" aria-hidden="true">
@@ -350,6 +602,29 @@ function App() {
           </div>
         </header>
 
+        <div className="tab-bar" role="tablist" aria-label="Studio modes">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "video"}
+            className={tab === "video" ? "active" : ""}
+            onClick={() => setTab("video")}
+          >
+            Create video
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "ask"}
+            className={tab === "ask" ? "active" : ""}
+            onClick={() => setTab("ask")}
+          >
+            Ask Intacct
+          </button>
+        </div>
+
+        {tab === "video" && (
+        <>
         <div className="workspace">
           <section className="panel form-panel" aria-labelledby="create-heading">
             <div className="section-heading">
@@ -410,7 +685,10 @@ function App() {
 
               <button
                 className="primary-action"
-                disabled={run ? !terminalStatuses.includes(run.status) : false}
+                disabled={
+                  workspaceBusy ||
+                  (run ? !terminalStatuses.includes(run.status) : false)
+                }
               >
                 <SparkIcon />
                 <span>
@@ -526,6 +804,83 @@ function App() {
                     </li>
                   ))}
                 </ul>
+              </div>
+
+              <div className="source-review okf-review">
+                <div className="media-preview-heading">
+                  <h3>Derived OKF concepts</h3>
+                  <span>
+                    {okfStatus?.available
+                      ? "Parallel concepts used for script/screenshot grounding"
+                      : okfStatus?.message ||
+                        "Build with python -m src.rag.build_okf"}
+                  </span>
+                </div>
+                {(run.okf_concepts || []).length === 0 ? (
+                  <p className="muted">
+                    No derived concepts linked for this run yet.
+                  </p>
+                ) : (
+                  <ul>
+                    {(run.okf_concepts || []).map((concept) => (
+                      <li key={concept.concept_id}>
+                        <button
+                          type="button"
+                          className="linkish"
+                          disabled={okfBusy}
+                          onClick={() => openOkfConcept(concept.concept_id)}
+                        >
+                          {concept.title}
+                        </button>
+                        <span>
+                          {concept.type}
+                          {concept.heading_path
+                            ? ` · ${concept.heading_path}`
+                            : ""}
+                        </span>
+                        {concept.page_url && (
+                          <small>
+                            <a
+                              href={concept.page_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Live Help
+                            </a>
+                          </small>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {okfDetail && (
+                  <div className="okf-detail">
+                    <div className="media-preview-heading">
+                      <h4>
+                        {okfDetail.type}: {okfDetail.title}
+                      </h4>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setOkfDetail(null)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                    {okfDetail.page_url && (
+                      <p>
+                        <a
+                          href={okfDetail.page_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open live Help topic
+                        </a>
+                      </p>
+                    )}
+                    <pre>{okfDetail.body || "(empty body)"}</pre>
+                  </div>
+                )}
               </div>
 
               <div className="media-preview">
@@ -833,11 +1188,287 @@ function App() {
           )}
           </section>
         )}
+        </>
+        )}
+
+        {tab === "ask" && (
+          <>
+            <div className="workspace">
+              <section className="panel form-panel" aria-labelledby="ask-heading">
+                <div className="section-heading">
+                  <span className="step-number">01</span>
+                  <div>
+                    <p className="section-kicker">Product Q&amp;A</p>
+                    <h2 id="ask-heading">What do you need to do in Intacct?</h2>
+                  </div>
+                </div>
+                <form onSubmit={submitAsk}>
+                  <div className="field">
+                    <div className="label-row">
+                      <label htmlFor="ask-question">Product question</label>
+                      <span>Required</span>
+                    </div>
+                    <textarea
+                      id="ask-question"
+                      value={askText}
+                      onChange={(event) => setAskText(event.target.value)}
+                      placeholder="Example: How do I import GL journals from CSV and then reverse one entry?"
+                      minLength={3}
+                      required
+                    />
+                    <p className="field-hint">
+                      Goals that span multiple screens or modules are supported.
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ask-module">Intacct module</label>
+                    <input
+                      id="ask-module"
+                      value={askModule}
+                      onChange={(event) => setAskModule(event.target.value)}
+                      placeholder="Optional focus, for example: Accounts Payable"
+                    />
+                  </div>
+                  <button
+                    className="primary-action"
+                    disabled={
+                      workspaceBusy ||
+                      (ask
+                        ? !askTerminal.includes(
+                            ask.status as (typeof askTerminal)[number]
+                          )
+                        : false)
+                    }
+                  >
+                    <SparkIcon />
+                    <span>
+                      {ask &&
+                      !askTerminal.includes(ask.status as (typeof askTerminal)[number])
+                        ? "Working on your answer…"
+                        : "Get Help-grounded answer"}
+                    </span>
+                    <ArrowIcon />
+                  </button>
+                </form>
+              </section>
+              <aside className="guidance" aria-labelledby="ask-guidance-heading">
+                <p className="section-kicker">For internal staff</p>
+                <h2 id="ask-guidance-heading">Accurate answers, not invented UI.</h2>
+                <ul>
+                  <li>
+                    <span>1</span>
+                    <div>
+                      <strong>Grounded in Help</strong>
+                      <p>Uses Chroma retrieval plus OKF procedures.</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>2</span>
+                    <div>
+                      <strong>Multi-topic goals</strong>
+                      <p>Follow-up retrieval covers cross-module workflows.</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>3</span>
+                    <div>
+                      <strong>Coverage diagnostic</strong>
+                      <p>Weak Help coverage is refused, not hallucinated.</p>
+                    </div>
+                  </li>
+                </ul>
+              </aside>
+            </div>
+
+            {(ask || (error && tab === "ask")) && (
+              <section className="panel status" aria-live="polite">
+                <div className="status-heading">
+                  <div>
+                    <p className="section-kicker">Pipeline activity</p>
+                    <h2>Answer status</h2>
+                  </div>
+                  {ask && <span className={`badge ${ask.status}`}>{ask.status}</span>}
+                </div>
+                {error && <p className="error">{error}</p>}
+                {askProgress.length > 0 && (
+                  <ol className="progress-list">
+                    {askProgress.map((event, index) => (
+                      <li key={`${event.stage}-${event.status}-${index}`}>
+                        <span className={`dot ${event.status}`} />
+                        <strong>{event.stage}</strong>
+                        <span>{event.status}</span>
+                        {event.duration_ms != null && (
+                          <small>{event.duration_ms} ms</small>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            )}
+
+            {ask?.status === "refused" && (
+              <section className="panel status">
+                <h2>Not enough Help coverage</h2>
+                <p className="error">
+                  {ask.coverage_gap ||
+                    ask.error_detail ||
+                    "Official Help does not adequately cover this question."}
+                </p>
+                <p className="field-hint">
+                  Treat this as a documentation gap signal for content owners.
+                </p>
+                {ask.sources.length > 0 && (
+                  <div className="source-review">
+                    <h3>Closest Help topics reviewed</h3>
+                    <ul>
+                      {ask.sources.map((source) => (
+                        <li key={source.source_id}>
+                          <a href={source.source_url} target="_blank" rel="noreferrer">
+                            {source.title}
+                          </a>
+                          <span>{source.heading_path || "Topic overview"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {ask?.status === "completed" && ask.answer && (
+              <section className="panel status">
+                <div className="section-heading">
+                  <span className="step-number">02</span>
+                  <div>
+                    <p className="section-kicker">Answer</p>
+                    <h2>How to do it in Intacct</h2>
+                  </div>
+                </div>
+                <p className="ask-summary">{ask.answer.summary}</p>
+                <ol className="ask-steps">
+                  {ask.answer.steps.map((step, index) => (
+                    <li key={`${step.instruction}-${index}`}>
+                      <strong>{step.instruction}</strong>
+                      {step.detail && <p>{step.detail}</p>}
+                    </li>
+                  ))}
+                </ol>
+                {ask.answer.notes.length > 0 && (
+                  <div className="ask-notes">
+                    <h3>Notes</h3>
+                    <ul>
+                      {ask.answer.notes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="source-review">
+                  <h3>Help references</h3>
+                  <ul>
+                    {ask.sources.map((source) => (
+                      <li key={source.source_id}>
+                        <a href={source.source_url} target="_blank" rel="noreferrer">
+                          {source.title}
+                        </a>
+                        <span>{source.heading_path || "Topic overview"}</span>
+                        <small>{Math.round(source.score * 100)}% relevance</small>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {(ask.okf_concepts || []).length > 0 && (
+                  <div className="source-review okf-review">
+                    <h3>Derived OKF concepts</h3>
+                    <ul>
+                      {ask.okf_concepts.map((concept) => (
+                        <li key={concept.concept_id}>
+                          <button
+                            type="button"
+                            className="linkish"
+                            disabled={okfBusy}
+                            onClick={() => openOkfConcept(concept.concept_id)}
+                          >
+                            {concept.title}
+                          </button>
+                          <span>{concept.type}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {okfDetail && (
+                      <div className="okf-detail">
+                        <div className="media-preview-heading">
+                          <h4>
+                            {okfDetail.type}: {okfDetail.title}
+                          </h4>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setOkfDetail(null)}
+                          >
+                            Close
+                          </button>
+                        </div>
+                        <pre>{okfDetail.body || "(empty body)"}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+          </>
+        )}
       </main>
 
-      <footer>
-        <p>Sage Intacct Video Studio</p>
-        <span>Prototype V0 · For internal review</span>
+      <footer className="studio-footer">
+        <div className="footer-copy">
+          <p>Sage Intacct Knowledge Studio</p>
+          <span>Prototype · For internal review</span>
+        </div>
+        <div className="corpus-refresh">
+          <div>
+            <strong>Refresh Help corpus</strong>
+            <small>
+              {workspaceBusy
+                ? `Workspace busy (${workspaceHolder || "working"}) — video and Q&A blocked`
+                : refresh?.status === "completed"
+                  ? refresh.message || "Corpus ready"
+                  : refresh?.status === "failed"
+                    ? refresh.error_detail || "Refresh failed"
+                    : "Re-scrape live Help, rebuild index, images, and OKF"}
+            </small>
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            disabled={
+              workspaceBusy ||
+              (refresh
+                ? !refreshTerminal.includes(
+                    refresh.status as (typeof refreshTerminal)[number]
+                  )
+                : false)
+            }
+            onClick={startCorpusRefresh}
+          >
+            {refresh &&
+            !refreshTerminal.includes(refresh.status as (typeof refreshTerminal)[number])
+              ? "Refreshing…"
+              : "Re-ingest Help"}
+          </button>
+        </div>
+        {refreshProgress.length > 0 && (
+          <ol className="progress-list footer-progress">
+            {refreshProgress.map((event, index) => (
+              <li key={`${event.stage}-${event.status}-${index}`}>
+                <span className={`dot ${event.status}`} />
+                <strong>{event.stage}</strong>
+                <span>{event.status}</span>
+              </li>
+            ))}
+          </ol>
+        )}
       </footer>
     </div>
   );

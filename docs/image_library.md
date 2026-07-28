@@ -43,15 +43,13 @@ Rough corpus expectations (full English Help):
 
 Always check `coverage.json` after a harvest for exact counts.
 
-## How the tool uses it
+How the tool uses it
 
-1. Retrieval still returns Help chunks from Chroma.
+1. Retrieval returns Help chunks from Chroma (OKF may narrow assets to the matching section).
 2. Chunk `asset_urls` are filtered to library URLs that exist locally and are marked usable.
-3. Script generation may cite `help_asset` URLs; the orchestrator also auto-assigns unused library assets from cited sources.
-4. Payload export writes:
-   - standard payload JSON with `medias` (absolute local paths)
-   - Higgsfield `video_explainer` package: `*-explainer.json`, `*-medias.json`, `*-prompt.txt`
-5. Run results expose `visual_coverage` (`green` / `yellow` / `red`) and `media_count`.
+3. Script generation leaves `help_asset` empty; the binder assigns library screenshots (heading-aware).
+4. Ask Intacct uses the same library only indirectly via OKF asset metadata; answers cite Help URLs.
+5. Payload/compositor resolve local paths for video.
 
 ## Gaps
 

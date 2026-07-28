@@ -8,7 +8,14 @@ from config.settings import Settings
 from src.classifier.classify_issue import classify_issue
 from src.intake.intake_handler import normalize_issue
 from src.llm.client import OllamaClient
-from src.models import IssueInput, ReviewAction, RunResult, Script, ScriptEdit
+from src.models import (
+    IssueInput,
+    OkfConceptRef,
+    ReviewAction,
+    RunResult,
+    Script,
+    ScriptEdit,
+)
 from src.rag.asset_binding import (
     assign_library_assets,
     filter_retrieved_to_library,
@@ -16,8 +23,11 @@ from src.rag.asset_binding import (
 )
 from src.rag.chroma_store import ChromaVectorStore
 from src.rag.image_library import HelpImageLibrary
+from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
+from src.rag.okf.store import OkfStore
 from src.rag.rag_retriever import retrieve_help_content
 from src.rag.vector_store import VectorStore
+from src.runtime_gate import BusyError, WorkGate
 from src.scriptgen.script_builder import GroundingError, build_script
 from src.scriptgen.script_writer import read_script_model, write_script
 from src.telemetry.logging import log_event, stage
@@ -43,10 +53,13 @@ class Orchestrator:
         vector_store: VectorStore | None = None,
         video_generator: VideoGenerator | None = None,
         image_library: HelpImageLibrary | None = None,
+        okf_store: OkfStore | None = None,
+        work_gate: WorkGate | None = None,
     ) -> None:
         self.settings = settings
         self.run_store = run_store
         self.tracker = tracker
+        self.work_gate = work_gate or WorkGate()
         self.llm = llm or OllamaClient(
             base_url=settings.ollama_base_url,
             chat_model=settings.ollama_chat_model,
@@ -61,6 +74,9 @@ class Orchestrator:
             "catalog.json"
         ).is_file():
             self.image_library = HelpImageLibrary(settings.help_assets_dir)
+        self.okf_store = okf_store
+        if self.okf_store is None and settings.okf_dir.joinpath("catalog.json").is_file():
+            self.okf_store = OkfStore(settings.okf_dir)
         self._pipeline_lock = Lock()
 
     def create_run_id(self) -> str:
@@ -81,6 +97,17 @@ class Orchestrator:
             return self._run_locked(run_id, issue_input)
 
     def _run_locked(self, run_id: str, issue_input: IssueInput) -> RunResult:
+        try:
+            self.work_gate.acquire("video")
+        except BusyError as error:
+            result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code="WORKSPACE_BUSY",
+                error_detail=str(error),
+            )
+            self._write_result(result)
+            return result
         self._write_status(run_id, "processing")
         log_event("run_started", run_id=run_id)
         try:
@@ -98,6 +125,8 @@ class Orchestrator:
                     top_k=self.settings.rag_top_k,
                     min_score=self.settings.rag_min_score,
                 )
+                # OKF first (procedure text + section assets), then library filter.
+                retrieved = enrich_retrieved_with_okf(retrieved, self.okf_store)
                 retrieved = filter_retrieved_to_library(retrieved, self.image_library)
 
             with stage(run_id, "script", self.tracker):
@@ -117,6 +146,13 @@ class Orchestrator:
                     retrieved=retrieved,
                 )
 
+            okf_concepts = [
+                OkfConceptRef.model_validate(item)
+                for item in related_concepts_for_sources(
+                    script.sources,
+                    self.okf_store,
+                )
+            ]
             result = RunResult(
                 run_id=run_id,
                 status="completed",
@@ -128,6 +164,7 @@ class Orchestrator:
                 auto_generate=issue_input.auto_generate,
                 classification=classification,
                 sources=script.sources,
+                okf_concepts=okf_concepts,
                 visual_coverage=coverage,
                 media_count=media_count,
             )
@@ -161,6 +198,8 @@ class Orchestrator:
                 error_detail=str(exc)[:300],
             )
             return result
+        finally:
+            self.work_gate.release("video")
 
     def get_result(self, run_id: str) -> RunResult | None:
         record = self.run_store.read(run_id)

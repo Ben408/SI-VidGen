@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     help_cache_dir: Path = Path("data/help_xhtml")
     help_assets_dir: Path = Path("data/help_assets")
+    okf_dir: Path = Path("data/okf")
     vector_store_dir: Path = Path("data/vector_store")
     runs_dir: Path = Path("data/runs")
     output_dir: Path = Path("output")
@@ -55,6 +56,7 @@ class Settings(BaseSettings):
             self.help_cache_dir,
             self.help_assets_dir,
             self.help_assets_dir / "files",
+            self.okf_dir,
             self.vector_store_dir,
             self.runs_dir,
             self.data_dir / "compositor_jobs",

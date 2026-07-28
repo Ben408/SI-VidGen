@@ -41,6 +41,8 @@ python -m src.rag.index_help --full
 
 Only `--full` removes stale indexed sources. Cached XHTML and Chroma data are gitignored under `data/help_xhtml/` and `data/vector_store/`.
 
+**UI:** footer **Re-ingest Help** runs full crawl + index + image library + OKF and blocks video/Ask while running.
+
 ## Chunking
 
 The XHTML chunker:
@@ -50,4 +52,14 @@ The XHTML chunker:
 - Targets 768 estimated tokens and caps chunks at 1,024
 - Records URL, content hash, title, heading path, and existing Help Center image URLs
 
-Module/task/UI metadata enrichment remains a follow-up before Phase 1 is considered fully closed.
+Module/task style metadata is partially expressed via OKF procedure/UI concepts; further enrichment remains optional.
+
+## OKF parallel bundle
+
+After the XHTML cache exists, build a rules-only Open Knowledge Format bundle for procedure-shaped grounding and section-scoped screenshots (shared `data/help_assets/` refs, no image copies):
+
+```powershell
+python -m src.rag.build_okf
+```
+
+See `docs/okf.md`. Chroma continues to index XHTML; OKF is a parallel artifact used at retrieve/bind time and browsable in the operator UI.
