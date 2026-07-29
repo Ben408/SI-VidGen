@@ -205,7 +205,7 @@ Local scratch (probes, old outputs) lives under gitignored `archive/`.
 | Repo | Role |
 |---|---|
 | **SI-VidGen** (this) | Ask / video / corpus engine + HTTP API |
-| **SI-VidGen-Slack** | Slack Socket Mode connector → calls this API’s `/api/ask` |
+| **SI-VidGen-Slack** | Slack Socket Mode connector → `/api/ask` + `/api/runs` (script/video) |
 | **Future Agent** | Orchestrates Slack + VidGen + Phrase TMS MCP (not started) |
 
 Slack tokens and allowlists live only in the Slack repo. This repo stays free of Slack SDKs.

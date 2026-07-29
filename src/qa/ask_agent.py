@@ -38,9 +38,12 @@ Do not invent product behavior. Structured data only."""
 ANSWER_SYSTEM = """You are an internal Sage Intacct product expert answering staff how-to questions.
 Use only the supplied official Help excerpts (and derived OKF procedure text in those excerpts).
 Produce a structured answer: summary, ordered steps, and notes.
-Every step must cite one or more supplied source_ids.
-If the sources do not adequately cover the user's goal, set coverage_sufficient=false and
-explain the gap in coverage_gap. Do not invent navigation or UI steps.
+Every step must cite one or more supplied source_ids (copy ids exactly from the sources).
+Set coverage_sufficient=true whenever a supplied Help topic directly addresses the goal
+(for example a topic titled like "Reverse journal entries" for reversing a GL journal).
+Answer from those excerpts even if some edge cases are missing; put caveats in notes.
+Set coverage_sufficient=false ONLY when the sources clearly do not cover the procedure at all.
+Do not invent navigation or UI steps that are absent from the excerpts.
 Structured data only."""
 
 
@@ -292,6 +295,31 @@ def _build_answer(
     retrieved: list,
 ) -> tuple[KnowledgeAnswer | None, str | None]:
     grounded = retrieved[:8]
+    answer, refused_gap = _draft_to_answer(llm, question=question, grounded=grounded)
+    if answer is not None:
+        return answer, None
+    if refused_gap is not None and _titles_look_relevant(question, grounded):
+        # One forced retry when Help titles clearly match the question.
+        answer, refused_gap = _draft_to_answer(
+            llm,
+            question=question,
+            grounded=grounded,
+            force_answer=True,
+        )
+        if answer is not None:
+            return answer, None
+    return None, refused_gap or (
+        "Not enough Help coverage to answer this product question"
+    )
+
+
+def _draft_to_answer(
+    llm: StructuredLLM,
+    *,
+    question: str,
+    grounded: list,
+    force_answer: bool = False,
+) -> tuple[KnowledgeAnswer | None, str | None]:
     allowed_ids = {chunk.source_id for chunk in grounded}
     source_payload = [
         {
@@ -303,25 +331,29 @@ def _build_answer(
         }
         for chunk in grounded
     ]
+    system = ANSWER_SYSTEM
+    if force_answer:
+        system = (
+            ANSWER_SYSTEM
+            + "\nIMPORTANT: Relevant Help topics were already retrieved for this question. "
+            "You MUST set coverage_sufficient=true and produce grounded steps. "
+            "Copy source_id values exactly from the supplied sources."
+        )
     user = (
         f"Question: {question}\n"
         f"Official help sources:\n{json.dumps(source_payload, ensure_ascii=False)}"
     )
-    draft, model = llm.generate_structured(ANSWER_SYSTEM, user, AnswerDraft)
-    if not draft.coverage_sufficient:
-        gap = draft.coverage_gap.strip() or (
-            "Not enough Help coverage to answer this product question"
-        )
-        return None, gap
+    draft, model = llm.generate_structured(system, user, AnswerDraft)
 
     steps: list[KnowledgeStep] = []
+    used_citation_fallback = False
     for item in draft.steps:
         cited = [source_id for source_id in item.source_ids if source_id in allowed_ids]
+        if not cited and grounded:
+            cited = [grounded[0].source_id]
+            used_citation_fallback = True
         if not cited:
-            return None, (
-                "Not enough Help coverage to answer this product question "
-                "(answer steps could not be grounded in retrieved sources)"
-            )
+            continue
         steps.append(
             KnowledgeStep(
                 instruction=item.instruction,
@@ -329,20 +361,79 @@ def _build_answer(
                 source_ids=cited,
             )
         )
-    if not steps:
-        return None, "Not enough Help coverage to answer this product question"
 
-    sources = [_as_source(chunk) for chunk in grounded]
-    return (
-        KnowledgeAnswer(
-            summary=draft.summary,
-            steps=steps,
-            notes=[note.strip() for note in draft.notes if note.strip()],
-            generation_model=model,
-            sources=sources,
-        ),
-        None,
+    if steps:
+        notes = [note.strip() for note in draft.notes if note.strip()]
+        if not draft.coverage_sufficient:
+            gap = draft.coverage_gap.strip()
+            if gap:
+                notes.append(f"Coverage note: {gap}")
+        if used_citation_fallback:
+            notes.append(
+                "Step citations were normalized to retrieved Help topics "
+                "because the model returned non-matching source ids."
+            )
+        sources = [_as_source(chunk) for chunk in grounded]
+        return (
+            KnowledgeAnswer(
+                summary=draft.summary,
+                steps=steps,
+                notes=notes,
+                generation_model=model,
+                sources=sources,
+            ),
+            None,
+        )
+
+    if not draft.coverage_sufficient:
+        gap = draft.coverage_gap.strip() or (
+            "Not enough Help coverage to answer this product question"
+        )
+        return None, gap
+
+    return None, (
+        "Not enough Help coverage to answer this product question "
+        "(answer steps could not be grounded in retrieved sources)"
     )
+
+
+def _titles_look_relevant(question: str, retrieved: list) -> bool:
+    question_tokens = _tokens(question)
+    if len(question_tokens) < 2:
+        return False
+    for chunk in retrieved[:4]:
+        title_tokens = _tokens(f"{chunk.title} {chunk.heading_path}")
+        if len(question_tokens & title_tokens) >= 2:
+            return True
+    return False
+
+
+_STOPWORDS = {
+    "a",
+    "an",
+    "the",
+    "to",
+    "of",
+    "and",
+    "or",
+    "for",
+    "in",
+    "on",
+    "how",
+    "do",
+    "i",
+    "is",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in "".join(
+            ch.lower() if ch.isalnum() else " " for ch in text
+        ).split()
+        if len(token) > 2 and token not in _STOPWORDS
+    }
 
 
 def _merge_chunks(existing: list, more: list) -> list:
