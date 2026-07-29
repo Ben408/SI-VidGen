@@ -20,6 +20,7 @@ from src.models import (
     OkfConceptRef,
     SourceReference,
 )
+from src.rag.locales import normalize_answer_language
 from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
 from src.rag.okf.store import OkfStore
 from src.rag.rag_retriever import InsufficientEvidenceError, retrieve_help_content
@@ -30,14 +31,15 @@ from src.telemetry.progress import ProgressTracker
 from src.telemetry.run_store import JsonRunStore
 
 PLAN_SYSTEM = """You plan Help Center retrieval for a Sage Intacct product-usage question.
-Given the user question and the first retrieval hits, return up to 2 additional English
-search queries that cover missing modules, screens, or prerequisite steps.
+Given the user question and the first retrieval hits, return up to 2 additional
+search queries in the requested help_language that cover missing modules, screens, or prerequisites.
 Return an empty list when the first retrieval already covers the goal.
 Do not invent product behavior. Structured data only."""
 
 ANSWER_SYSTEM = """You are an internal Sage Intacct product expert answering staff how-to questions.
 Use only the supplied official Help excerpts (and derived OKF procedure text in those excerpts).
 Produce a structured answer: summary, ordered steps, and notes.
+Write the entire answer in the requested answer_language.
 Every step must cite one or more supplied source_ids (copy ids exactly from the sources).
 Set coverage_sufficient=true whenever a supplied Help topic directly addresses the goal
 (for example a topic titled like "Reverse journal entries" for reversing a GL journal).
@@ -130,9 +132,19 @@ class AskService:
         try:
             with stage(ask_id, "intake", self.tracker):
                 issue = normalize_issue(question)
+                source_language, answer_language = normalize_answer_language(
+                    question=issue.raw_text,
+                    answer_language=question.answer_language,
+                    source_language=question.source_language,
+                )
+                # Retrieve from the Help corpus matching the answer language
+                # (localized Help is the grounding source for that language).
+                help_language = answer_language
 
             with stage(ask_id, "classify", self.tracker):
-                classification = classify_issue(issue, self.llm)
+                classification = classify_issue(
+                    issue, self.llm, help_language=help_language
+                )
 
             with stage(ask_id, "retrieve", self.tracker):
                 retrieved = retrieve_help_content(
@@ -141,6 +153,7 @@ class AskService:
                     self.llm,
                     top_k=self.settings.rag_top_k,
                     min_score=self.settings.rag_min_score,
+                    language=help_language,
                 )
                 retrieved = enrich_retrieved_with_okf(retrieved, self.okf_store)
 
@@ -150,6 +163,7 @@ class AskService:
                     question=issue.raw_text,
                     classification_query=classification.search_query,
                     retrieved=retrieved,
+                    help_language=help_language,
                 )
                 for query in follow_ups:
                     try:
@@ -159,6 +173,7 @@ class AskService:
                             self.llm,
                             top_k=self.settings.rag_top_k,
                             min_score=self.settings.rag_min_score,
+                            language=help_language,
                         )
                         more = enrich_retrieved_with_okf(more, self.okf_store)
                         retrieved = _merge_chunks(retrieved, more)
@@ -175,6 +190,7 @@ class AskService:
                     self.llm,
                     question=issue.raw_text,
                     retrieved=retrieved,
+                    answer_language=answer_language,
                 )
 
             if refused_gap is not None:
@@ -193,6 +209,8 @@ class AskService:
                     coverage_gap=refused_gap,
                     error_code="INSUFFICIENT_HELP_COVERAGE",
                     error_detail=refused_gap,
+                    source_language=source_language,
+                    answer_language=answer_language,
                 )
                 self._write_result(result)
                 log_event("ask_refused", run_id=ask_id, error_code="INSUFFICIENT_HELP_COVERAGE")
@@ -210,6 +228,8 @@ class AskService:
                     for item in related_concepts_for_sources(sources, self.okf_store)
                 ],
                 followup_queries=follow_ups,
+                source_language=source_language,
+                answer_language=answer_language,
             )
             self._write_result(result)
             log_event("ask_completed", run_id=ask_id)
@@ -256,6 +276,7 @@ def _plan_followups(
     question: str,
     classification_query: str,
     retrieved: list,
+    help_language: str = "en_US",
 ) -> list[str]:
     payload = [
         {
@@ -268,6 +289,7 @@ def _plan_followups(
     ]
     user = (
         f"Question: {question}\n"
+        f"Help language for additional queries: {help_language}\n"
         f"Primary search query: {classification_query}\n"
         f"First retrieval hits:\n{json.dumps(payload, ensure_ascii=False)}"
     )
@@ -293,18 +315,24 @@ def _build_answer(
     *,
     question: str,
     retrieved: list,
+    answer_language: str = "en_US",
 ) -> tuple[KnowledgeAnswer | None, str | None]:
     grounded = retrieved[:8]
-    answer, refused_gap = _draft_to_answer(llm, question=question, grounded=grounded)
+    answer, refused_gap = _draft_to_answer(
+        llm,
+        question=question,
+        grounded=grounded,
+        answer_language=answer_language,
+    )
     if answer is not None:
         return answer, None
     if refused_gap is not None and _titles_look_relevant(question, grounded):
-        # One forced retry when Help titles clearly match the question.
         answer, refused_gap = _draft_to_answer(
             llm,
             question=question,
             grounded=grounded,
             force_answer=True,
+            answer_language=answer_language,
         )
         if answer is not None:
             return answer, None
@@ -319,6 +347,7 @@ def _draft_to_answer(
     question: str,
     grounded: list,
     force_answer: bool = False,
+    answer_language: str = "en_US",
 ) -> tuple[KnowledgeAnswer | None, str | None]:
     allowed_ids = {chunk.source_id for chunk in grounded}
     source_payload = [
@@ -341,6 +370,7 @@ def _draft_to_answer(
         )
     user = (
         f"Question: {question}\n"
+        f"answer_language: {answer_language}\n"
         f"Official help sources:\n{json.dumps(source_payload, ensure_ascii=False)}"
     )
     draft, model = llm.generate_structured(system, user, AnswerDraft)

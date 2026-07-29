@@ -29,6 +29,7 @@ class HelpChunk:
     heading_path: str
     asset_urls: tuple[str, ...]
     token_estimate: int
+    language: str = "en_US"
 
     def metadata(self) -> dict[str, str | int]:
         return {
@@ -38,6 +39,7 @@ class HelpChunk:
             "heading_path": self.heading_path,
             "asset_urls": "|".join(self.asset_urls),
             "token_estimate": self.token_estimate,
+            "language": self.language,
         }
 
 
@@ -52,6 +54,7 @@ def chunk_xhtml(
     source_hash: str,
     target_tokens: int = 768,
     max_tokens: int = 1024,
+    language: str = "en_US",
 ) -> list[HelpChunk]:
     if not 0 < target_tokens <= max_tokens:
         raise ValueError("target_tokens must be positive and no greater than max_tokens")
@@ -86,6 +89,7 @@ def chunk_xhtml(
                 heading_path=heading_path,
                 asset_urls=assets,
                 token_estimate=estimate_tokens(text),
+                language=language,
             )
         )
         current_parts.clear()
@@ -115,9 +119,13 @@ def chunk_cached_document(
     cache_path: str,
     source_url: str,
     source_hash: str,
+    language: str | None = None,
 ) -> list[HelpChunk]:
+    from src.rag.locales import locale_from_help_url
+
     xhtml = (cache_root / cache_path).read_text(encoding="utf-8")
-    return chunk_xhtml(xhtml, source_url, source_hash)
+    lang = language or locale_from_help_url(source_url) or "en_US"
+    return chunk_xhtml(xhtml, source_url, source_hash, language=lang)
 
 
 def _page_title(soup: BeautifulSoup) -> str:

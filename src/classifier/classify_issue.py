@@ -7,7 +7,8 @@ from src.models import Classification, NormalizedIssue
 
 SYSTEM_PROMPT = """You classify Sage Intacct support issues for retrieval.
 Return structured data only. Be concise and factual.
-The search query must be a standalone English query optimized for official Intacct Help.
+The search query must be a standalone query optimized for official Intacct Help
+in the requested help language (same wording language as that Help locale).
 Do not invent error codes, modules, screens, or product behavior.
 Confidence measures classification certainty, not whether the issue can be solved."""
 
@@ -22,10 +23,16 @@ class ClassificationDraft(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
-def classify_issue(issue: NormalizedIssue, llm: StructuredLLM) -> Classification:
+def classify_issue(
+    issue: NormalizedIssue,
+    llm: StructuredLLM,
+    *,
+    help_language: str = "en_US",
+) -> Classification:
     context = {key: value for key, value in issue.context.items() if value}
     user_prompt = (
         "Classify this support issue.\n"
+        f"Help language for search_query: {help_language}\n"
         f"Issue: {issue.raw_text}\n"
         f"Provided context: {json.dumps(context, ensure_ascii=False)}"
     )

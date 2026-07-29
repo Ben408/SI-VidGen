@@ -31,6 +31,12 @@ COMPOSITOR_VOICES: list[dict[str, str]] = [
     {"id": "en-US-AndrewNeural", "label": "Andrew (US) — conversational"},
     {"id": "en-US-GuyNeural", "label": "Guy (US) — steady"},
     {"id": "en-GB-SoniaNeural", "label": "Sonia (UK)"},
+    {"id": "fr-FR-DeniseNeural", "label": "Denise (FR)"},
+    {"id": "fr-FR-HenriNeural", "label": "Henri (FR)"},
+    {"id": "de-DE-KatjaNeural", "label": "Katja (DE)"},
+    {"id": "de-DE-ConradNeural", "label": "Conrad (DE)"},
+    {"id": "es-ES-ElviraNeural", "label": "Elvira (ES)"},
+    {"id": "es-ES-AlvaroNeural", "label": "Alvaro (ES)"},
 ]
 
 COMPOSITOR_RATES: list[dict[str, str]] = [

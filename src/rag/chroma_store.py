@@ -46,6 +46,7 @@ class ChromaVectorStore:
                     heading_path=chunk.heading_path,
                     asset_urls=chunk.asset_urls,
                     token_estimate=chunk.token_estimate,
+                    language=chunk.language,
                 )
             unique_chunks.append(chunk)
             unique_embeddings.append(embedding)

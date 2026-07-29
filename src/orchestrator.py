@@ -23,6 +23,7 @@ from src.rag.asset_binding import (
 )
 from src.rag.chroma_store import ChromaVectorStore
 from src.rag.image_library import HelpImageLibrary
+from src.rag.locales import edge_voice_for_locale, normalize_answer_language
 from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
 from src.rag.okf.store import OkfStore
 from src.rag.rag_retriever import retrieve_help_content
@@ -113,9 +114,21 @@ class Orchestrator:
         try:
             with stage(run_id, "intake", self.tracker):
                 issue = normalize_issue(issue_input)
+                _source_lang, answer_lang = normalize_answer_language(
+                    question=issue.raw_text,
+                    answer_language=issue_input.answer_language,
+                    source_language=issue_input.source_language,
+                )
+                target_language = (
+                    issue_input.target_language
+                    if issue_input.target_language
+                    else answer_lang
+                )
 
             with stage(run_id, "classify", self.tracker):
-                classification = classify_issue(issue, self.llm)
+                classification = classify_issue(
+                    issue, self.llm, help_language=target_language
+                )
 
             with stage(run_id, "retrieve", self.tracker):
                 retrieved = retrieve_help_content(
@@ -124,10 +137,15 @@ class Orchestrator:
                     self.llm,
                     top_k=self.settings.rag_top_k,
                     min_score=self.settings.rag_min_score,
+                    language=target_language,
                 )
                 # OKF first (procedure text + section assets), then library filter.
                 retrieved = enrich_retrieved_with_okf(retrieved, self.okf_store)
-                retrieved = filter_retrieved_to_library(retrieved, self.image_library)
+                retrieved = filter_retrieved_to_library(
+                    retrieved,
+                    self.image_library,
+                    video_locale=target_language,
+                )
 
             with stage(run_id, "script", self.tracker):
                 script = build_script(issue, classification, retrieved, self.llm)

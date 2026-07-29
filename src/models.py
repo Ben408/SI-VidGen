@@ -10,6 +10,11 @@ class IssueInput(BaseModel):
     screen: str | None = Field(default=None, max_length=200)
     error_code: str | None = Field(default=None, max_length=100)
     auto_generate: bool = False
+    # Help locale tags: en_US | fr_FR | de_DE | es_ES
+    source_language: str | None = Field(default=None, max_length=10)
+    answer_language: str | None = Field(default=None, max_length=10)
+    # Video/script target locale (defaults to answer_language or en_US)
+    target_language: str | None = Field(default=None, max_length=10)
 
 
 class NormalizedIssue(BaseModel):
@@ -191,6 +196,8 @@ class AskResult(BaseModel):
     coverage_gap: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
+    source_language: str | None = None
+    answer_language: str | None = None
 
 
 class RefreshResult(BaseModel):

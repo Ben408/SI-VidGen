@@ -18,23 +18,43 @@ CLASS_PRIORITY = {
 }
 
 
+def filter_assets_by_locale(
+    asset_urls: list[str],
+    *,
+    video_locale: str,
+) -> list[str]:
+    """Drop English Help screenshot URLs when rendering non-English videos."""
+    from src.rag.locales import locale_from_help_url
+
+    if video_locale == "en_US":
+        return list(asset_urls)
+    kept: list[str] = []
+    for url in asset_urls:
+        loc = locale_from_help_url(url)
+        if loc is None or loc == video_locale:
+            kept.append(url)
+        # Explicitly exclude other locales (especially en_US) from non-EN videos
+    return kept
+
+
 def filter_retrieved_to_library(
     retrieved: list[RetrievedChunk],
     library: HelpImageLibrary | None,
+    *,
+    video_locale: str | None = None,
 ) -> list[RetrievedChunk]:
-    if library is None:
+    if library is None and not video_locale:
         return retrieved
-    usable = library.usable_urls()
-    if not usable:
-        return [
-            chunk.model_copy(update={"asset_urls": []}) for chunk in retrieved
-        ]
-    return [
-        chunk.model_copy(
-            update={"asset_urls": [url for url in chunk.asset_urls if url in usable]}
-        )
-        for chunk in retrieved
-    ]
+    usable = library.usable_urls() if library is not None else None
+    out: list[RetrievedChunk] = []
+    for chunk in retrieved:
+        urls = list(chunk.asset_urls)
+        if video_locale:
+            urls = filter_assets_by_locale(urls, video_locale=video_locale)
+        if usable is not None:
+            urls = [url for url in urls if url in usable] if usable else []
+        out.append(chunk.model_copy(update={"asset_urls": urls}))
+    return out
 
 
 def assign_library_assets(

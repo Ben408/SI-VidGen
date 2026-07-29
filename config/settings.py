@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     intacct_help_allowed_prefix: str = (
         "https://www.intacct.com/ia/docs/en_US/help_action/"
     )
+    # Crawl/index locales: "en_US" (default) or "all" / "en_US,fr_FR,de_DE,es_ES"
+    help_locales: str = "en_US"
     crawl_delay_seconds: float = 0.25
 
     data_dir: Path = Path("data")
