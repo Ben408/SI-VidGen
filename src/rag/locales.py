@@ -125,6 +125,15 @@ def cache_dir_for_locale(help_cache_dir: Path, locale: str) -> Path:
     return help_cache_dir / locale
 
 
+def assets_dir_for_locale(help_assets_dir: Path, locale: str) -> Path:
+    """EN may live at legacy ``help_assets/``; other locales use ``help_assets/{locale}/``."""
+    if locale == "en_US":
+        legacy_catalog = help_assets_dir / "catalog.json"
+        if legacy_catalog.is_file() or (help_assets_dir / "files").is_dir():
+            return help_assets_dir
+    return help_assets_dir / locale
+
+
 def detect_question_language(text: str, default: str = "en_US") -> str:
     """Lightweight locale guess from character/word hints."""
     lowered = f" {(text or '').lower()} "

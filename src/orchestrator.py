@@ -23,7 +23,7 @@ from src.rag.asset_binding import (
 )
 from src.rag.chroma_store import ChromaVectorStore
 from src.rag.image_library import HelpImageLibrary
-from src.rag.locales import edge_voice_for_locale, normalize_answer_language
+from src.rag.locales import assets_dir_for_locale, edge_voice_for_locale, normalize_answer_language
 from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
 from src.rag.okf.store import OkfStore
 from src.rag.rag_retriever import retrieve_help_content
@@ -71,14 +71,26 @@ class Orchestrator:
         self.vector_store = vector_store or ChromaVectorStore(settings.vector_store_dir)
         self.video_generator = video_generator or create_video_generator(settings)
         self.image_library = image_library
+        self._image_libraries: dict[str, HelpImageLibrary] = {}
         if self.image_library is None and settings.help_assets_dir.joinpath(
             "catalog.json"
         ).is_file():
             self.image_library = HelpImageLibrary(settings.help_assets_dir)
+            self._image_libraries["en_US"] = self.image_library
         self.okf_store = okf_store
         if self.okf_store is None and settings.okf_dir.joinpath("catalog.json").is_file():
             self.okf_store = OkfStore(settings.okf_dir)
         self._pipeline_lock = Lock()
+
+    def library_for_locale(self, locale: str) -> HelpImageLibrary | None:
+        if locale in self._image_libraries:
+            return self._image_libraries[locale]
+        path = assets_dir_for_locale(self.settings.help_assets_dir, locale)
+        if not path.joinpath("catalog.json").is_file():
+            return self.image_library if locale == "en_US" else None
+        library = HelpImageLibrary(path)
+        self._image_libraries[locale] = library
+        return library
 
     def create_run_id(self) -> str:
         return f"run-{uuid4()}"
@@ -141,27 +153,29 @@ class Orchestrator:
                 )
                 # OKF first (procedure text + section assets), then library filter.
                 retrieved = enrich_retrieved_with_okf(retrieved, self.okf_store)
+                locale_library = self.library_for_locale(target_language)
                 retrieved = filter_retrieved_to_library(
                     retrieved,
-                    self.image_library,
+                    locale_library,
                     video_locale=target_language,
                 )
 
             with stage(run_id, "script", self.tracker):
                 script = build_script(issue, classification, retrieved, self.llm)
-                script = assign_library_assets(script, retrieved, self.image_library)
+                script = assign_library_assets(script, retrieved, locale_library)
                 script_path = write_script(
                     script, run_id, self.settings.scripts_dir, version=1
                 )
 
             with stage(run_id, "payload", self.tracker):
-                coverage = visual_coverage(script, retrieved, self.image_library)
+                coverage = visual_coverage(script, retrieved, locale_library)
                 payload, package_path, media_count = self._write_payload_bundle(
                     script,
                     run_id,
                     version=1,
                     coverage=coverage,
                     retrieved=retrieved,
+                    library=locale_library,
                 )
 
             okf_concepts = [
@@ -472,14 +486,16 @@ class Orchestrator:
         version: int,
         coverage: str,
         retrieved=None,
+        library: HelpImageLibrary | None = None,
     ) -> tuple[Path, Path | None, int]:
+        active_library = library if library is not None else self.image_library
         payload = build_higgsfield_payload(
             script,
-            self.image_library,
+            active_library,
             visual_coverage=coverage,
             retrieved=retrieved,
         )
-        package = build_explainer_package(script, self.image_library, retrieved)
+        package = build_explainer_package(script, active_library, retrieved)
         package_path, _, _ = write_explainer_package(
             package, run_id, self.settings.payloads_dir, version=version
         )

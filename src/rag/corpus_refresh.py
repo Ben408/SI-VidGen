@@ -9,6 +9,7 @@ from config.settings import Settings
 from src.models import RefreshResult
 from src.rag.image_library import build_image_library
 from src.rag.index_help import build_index
+from src.rag.locales import assets_dir_for_locale, cache_dir_for_locale, parse_locales
 from src.rag.okf.convert import convert_xhtml_cache_to_okf
 from src.runtime_gate import BusyError, WorkGate
 from src.telemetry.logging import log_event, stage
@@ -79,6 +80,8 @@ class CorpusRefreshService:
                     "crawl_errors": index_summary.crawl_errors,
                     "index_errors": index_summary.index_errors,
                     "complete": index_summary.complete,
+                    "locales": index_summary.locales,
+                    "by_locale": index_summary.by_locale,
                 }
                 if index_summary.index_errors or (
                     index_summary.crawl_errors and not index_summary.pages_crawled
@@ -90,24 +93,38 @@ class CorpusRefreshService:
                     )
 
             with stage(refresh_id, "image_library", self.tracker):
-                library_summary = build_image_library(
-                    self.settings.help_cache_dir,
-                    self.settings.help_assets_dir,
-                    download=True,
-                )
-                details["image_library"] = {
-                    "pages_scanned": library_summary.pages_scanned,
-                    "assets_usable": library_summary.assets_usable,
-                    "assets_downloaded": library_summary.assets_downloaded,
-                    "download_errors": library_summary.download_errors,
-                    "pages_with_usable_assets": library_summary.pages_with_usable_assets,
-                }
+                locales = parse_locales(self.settings.help_locales)
+                library_reports: list[dict[str, object]] = []
+                for locale in locales:
+                    cache_dir = cache_dir_for_locale(self.settings.help_cache_dir, locale)
+                    library_dir = assets_dir_for_locale(self.settings.help_assets_dir, locale)
+                    if not (cache_dir / "manifest.json").is_file():
+                        continue
+                    library_dir.mkdir(parents=True, exist_ok=True)
+                    library_summary = build_image_library(
+                        cache_dir,
+                        library_dir,
+                        download=True,
+                    )
+                    library_reports.append(
+                        {
+                            "locale": locale,
+                            "pages_scanned": library_summary.pages_scanned,
+                            "assets_usable": library_summary.assets_usable,
+                            "assets_downloaded": library_summary.assets_downloaded,
+                            "download_errors": library_summary.download_errors,
+                            "pages_with_usable_assets": library_summary.pages_with_usable_assets,
+                        }
+                    )
+                details["image_library"] = {"locales": library_reports}
 
             with stage(refresh_id, "okf", self.tracker):
+                okf_cache = cache_dir_for_locale(self.settings.help_cache_dir, "en_US")
+                okf_library = assets_dir_for_locale(self.settings.help_assets_dir, "en_US")
                 okf_summary = convert_xhtml_cache_to_okf(
-                    self.settings.help_cache_dir,
+                    okf_cache,
                     self.settings.okf_dir,
-                    library_dir=self.settings.help_assets_dir,
+                    library_dir=okf_library,
                 )
                 details["okf"] = {
                     "pages_converted": okf_summary.pages_converted,

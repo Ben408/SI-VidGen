@@ -6,6 +6,7 @@ import httpx
 
 from src.rag.locales import (
     HELP_LOCALES,
+    assets_dir_for_locale,
     cache_dir_for_locale,
     detect_question_language,
     edge_voice_for_locale,
@@ -40,11 +41,14 @@ def test_locale_from_help_url() -> None:
     assert locale_from_help_url("https://example.com/x") is None
 
 
-def test_cache_dir_legacy_en(tmp_path: Path) -> None:
-    root = tmp_path / "help_xhtml"
-    (root / "pages").mkdir(parents=True)
-    assert cache_dir_for_locale(root, "en_US") == root
-    assert cache_dir_for_locale(root, "fr_FR") == root / "fr_FR"
+def test_assets_dir_for_locale(tmp_path: Path) -> None:
+    from src.rag.locales import assets_dir_for_locale
+
+    root = tmp_path / "help_assets"
+    (root / "files").mkdir(parents=True)
+    (root / "catalog.json").write_text("{}", encoding="utf-8")
+    assert assets_dir_for_locale(root, "en_US") == root
+    assert assets_dir_for_locale(root, "fr_FR") == root / "fr_FR"
 
 
 def test_detect_and_normalize_answer_language() -> None:
