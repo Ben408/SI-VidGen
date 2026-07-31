@@ -24,6 +24,9 @@ def retrieve_help_content(
     except Exception:
         # Older Chroma rows may lack language metadata — retry unfiltered then post-filter.
         results = store.query(embedding, top_k=max(top_k * 3, 15), where=None)
+    # Chroma where-filter can return [] (no exception) when language metadata is missing.
+    if where and not results:
+        results = store.query(embedding, top_k=max(top_k * 3, 15), where=None)
     chunks: list[RetrievedChunk] = []
     for result in results:
         score = float(result["score"])

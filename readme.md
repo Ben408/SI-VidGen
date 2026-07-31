@@ -86,10 +86,19 @@ Confirm `.env` keeps the local defaults:
 
 ### 3. Pull Ollama models
 
+**This app’s Ask / script / video chat model is still `gemma3:12b`.**  
+`qwen2.5-hermes` is for **Hermes-Local** (Slack `/hermes` fallback), not for Knowledge Studio Ask/script unless you deliberately change `.env` and retest.
+
 ```powershell
+# Prefer models on F: (shared with Hermes / Slack host)
+$env:OLLAMA_MODELS = 'F:\OllamaModels'
+
 ollama pull gemma3:12b
 ollama pull llama3.2:latest
 ollama pull nomic-embed-text
+# Optional (Hermes free MT / agent — not required for UI Ask/video):
+# ollama pull translategemma:12b
+# ollama pull qwen2.5:14b
 ```
 
 On a smaller machine you can temporarily point `.env` at `llama3.2:latest` as `OLLAMA_CHAT_MODEL` for faster (lower-quality) iteration.
@@ -193,7 +202,7 @@ A shared **work gate** keeps video, Ask, and refresh from overlapping on the loc
 | `docs/okf.md` | OKF parallel bundle |
 | `docs/image_library.md` | Screenshot library |
 | `docs/sample_query.md` | CSV-import demo |
-| `docs/multilingual.md` | FR/DE/ES-ES (deferred) |
+| `docs/multilingual.md` | FR/DE/ES hybrid strategy (crawl in progress) |
 | `docs/telemetry.md` | Run events / privacy |
 
 Local scratch (probes, old outputs) lives under gitignored `archive/`.
@@ -202,13 +211,15 @@ Local scratch (probes, old outputs) lives under gitignored `archive/`.
 
 ## Sibling projects (local + GitHub)
 
-| Repo | Role |
-|---|---|
-| **SI-VidGen** (this) | Ask / video / corpus engine + HTTP API |
-| **SI-VidGen-Slack** | Slack Socket Mode connector → `/api/ask` + `/api/runs` (script/video) |
-| **Future Agent** | Orchestrates Slack + VidGen + Phrase TMS MCP (not started) |
+| Repo | Role | Default models |
+|---|---|---|
+| **SI-VidGen** (this) | Ask / video / corpus engine + HTTP API | **`gemma3:12b`** + `nomic-embed-text` |
+| **SI-VidGen-Slack** | Slack front door → VidGen API + Hermes | (none — routes only) |
+| **Hermes-Local** | Termweb / Phrase / free translate skills | Dispatcher + `translategemma:12b`; chat fallback `qwen2.5-hermes` |
 
-Slack tokens and allowlists live only in the Slack repo. This repo stays free of Slack SDKs.
+Slack tokens, Phrase/Termweb secrets, and Hermes allowlists live only in the Slack / Hermes repos. This repo stays free of Slack SDKs.
+
+See `DEVELOPMENT_STATUS.md` for the RAG language-filter fix and T1 smoke notes.
 
 ---
 

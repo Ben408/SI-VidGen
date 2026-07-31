@@ -161,11 +161,11 @@ def normalize_answer_language(
     source_language: str | None = None,
 ) -> tuple[str, str]:
     """Return (source_language, answer_language) with defaults."""
-    source = source_language if source_language in HELP_LOCALES else detect_question_language(question)
-    if answer_language in HELP_LOCALES:
-        answer = answer_language
+    if source_language in HELP_LOCALES:
+        source = source_language
     else:
-        answer = source
+        source = detect_question_language(question)
+    answer = answer_language if answer_language in HELP_LOCALES else source
     return source, answer
 
 

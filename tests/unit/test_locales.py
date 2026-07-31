@@ -7,7 +7,6 @@ import httpx
 from src.rag.locales import (
     HELP_LOCALES,
     assets_dir_for_locale,
-    cache_dir_for_locale,
     detect_question_language,
     edge_voice_for_locale,
     locale_from_help_url,
@@ -42,8 +41,6 @@ def test_locale_from_help_url() -> None:
 
 
 def test_assets_dir_for_locale(tmp_path: Path) -> None:
-    from src.rag.locales import assets_dir_for_locale
-
     root = tmp_path / "help_assets"
     (root / "files").mkdir(parents=True)
     (root / "catalog.json").write_text("{}", encoding="utf-8")

@@ -23,7 +23,7 @@ from src.rag.asset_binding import (
 )
 from src.rag.chroma_store import ChromaVectorStore
 from src.rag.image_library import HelpImageLibrary
-from src.rag.locales import assets_dir_for_locale, edge_voice_for_locale, normalize_answer_language
+from src.rag.locales import assets_dir_for_locale, normalize_answer_language
 from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
 from src.rag.okf.store import OkfStore
 from src.rag.rag_retriever import retrieve_help_content

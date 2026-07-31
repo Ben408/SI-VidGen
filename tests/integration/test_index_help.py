@@ -35,6 +35,7 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         data_dir=tmp_path,
         help_cache_dir=tmp_path / "help",
+        help_locales="en_US",
         vector_store_dir=tmp_path / "vectors",
         runs_dir=tmp_path / "runs",
         output_dir=tmp_path / "output",

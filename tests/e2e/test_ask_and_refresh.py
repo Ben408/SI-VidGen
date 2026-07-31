@@ -72,6 +72,7 @@ def _settings(tmp_path) -> Settings:
         published_dir=tmp_path / "output" / "published",
         help_cache_dir=tmp_path / "help_xhtml",
         help_assets_dir=tmp_path / "help_assets",
+        help_locales="en_US",
         okf_dir=tmp_path / "okf",
         vector_store_dir=tmp_path / "vector_store",
     )
