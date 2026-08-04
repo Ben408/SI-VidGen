@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from threading import Lock
 from uuid import uuid4
 
@@ -46,7 +47,24 @@ Set coverage_sufficient=true whenever a supplied Help topic directly addresses t
 Answer from those excerpts even if some edge cases are missing; put caveats in notes.
 Set coverage_sufficient=false ONLY when the sources clearly do not cover the procedure at all.
 Do not invent navigation or UI steps that are absent from the excerpts.
+Do not include external websites, vendor tools, or any URL that is not an official
+Sage Intacct Help link from the supplied sources (https://www.intacct.com/ia/docs/…).
+Never recommend third-party DNS, email, or network utilities. Help topic titles and
+source_ids are enough; the product UI lists Help references separately.
+Never put source_id values, content hashes, or Help file names (.htm / .xhtml) in
+summary, steps, or notes — cite only via the structured source_ids field on each step.
 Structured data only."""
+
+# Only official Intacct Help Center links may appear in Ask free text.
+_ALLOWED_HELP_URL_PREFIXES = (
+    "https://www.intacct.com/ia/docs/",
+    "http://www.intacct.com/ia/docs/",
+)
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)", re.IGNORECASE)
+_BARE_URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.IGNORECASE)
+# Chroma / chunk source ids are sha-like hex; models often paste them into notes.
+_SOURCE_ID_TOKEN_RE = re.compile(r"\[?\b[a-f0-9]{40,64}\b\]?", re.IGNORECASE)
+_HELP_FILE_TOKEN_RE = re.compile(r"\b[\w.-]+\.(?:xhtml|htm|html)\b", re.IGNORECASE)
 
 
 class FollowUpPlan(BaseModel):
@@ -403,10 +421,21 @@ def _draft_to_answer(
                 "Step citations were normalized to retrieved Help topics "
                 "because the model returned non-matching source ids."
             )
+        steps = [
+            KnowledgeStep(
+                instruction=scrub_ask_free_text(step.instruction),
+                detail=scrub_ask_free_text(step.detail),
+                source_ids=step.source_ids,
+            )
+            for step in steps
+            if scrub_ask_free_text(step.instruction)
+        ]
+        notes = [scrub_ask_free_text(note) for note in notes]
+        notes = [note for note in notes if note]
         sources = [_as_source(chunk) for chunk in grounded]
         return (
             KnowledgeAnswer(
-                summary=draft.summary,
+                summary=scrub_ask_free_text(draft.summary),
                 steps=steps,
                 notes=notes,
                 generation_model=model,
@@ -454,6 +483,58 @@ _STOPWORDS = {
     "i",
     "is",
 }
+
+
+def is_allowed_help_url(url: str) -> bool:
+    cleaned = (url or "").strip().rstrip(").,;]!>?")
+    low = cleaned.lower()
+    return any(low.startswith(prefix) for prefix in _ALLOWED_HELP_URL_PREFIXES)
+
+
+def scrub_non_help_urls(text: str) -> str:
+    """Remove any non–Sage Intacct Help URLs from Ask free text."""
+    if not text:
+        return ""
+
+    def _md_repl(match: re.Match[str]) -> str:
+        label, url = match.group(1), match.group(2)
+        if is_allowed_help_url(url):
+            return match.group(0)
+        return label.strip()
+
+    cleaned = _MD_LINK_RE.sub(_md_repl, text)
+
+    def _url_repl(match: re.Match[str]) -> str:
+        url = match.group(0)
+        return url if is_allowed_help_url(url) else ""
+
+    cleaned = _BARE_URL_RE.sub(_url_repl, cleaned)
+    return _tidy_scrubbed_text(cleaned)
+
+
+def scrub_internal_ids(text: str) -> str:
+    """Remove chunk source_ids / Help file names that are useless to staff."""
+    if not text:
+        return ""
+    cleaned = _SOURCE_ID_TOKEN_RE.sub("", text)
+    cleaned = _HELP_FILE_TOKEN_RE.sub("", cleaned)
+    return _tidy_scrubbed_text(cleaned)
+
+
+def scrub_ask_free_text(text: str) -> str:
+    """Sanitize Ask summary/steps/notes for Slack and API consumers."""
+    return scrub_internal_ids(scrub_non_help_urls(text))
+
+
+def _tidy_scrubbed_text(text: str) -> str:
+    cleaned = re.sub(r"[ \t]{2,}", " ", text)
+    cleaned = re.sub(r" ?\n ?", "\n", cleaned)
+    cleaned = re.sub(r"\(\s*(?:like|e\.g\.|eg\.?|for example)?\s*\)", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\[\s*\]", "", cleaned)
+    cleaned = re.sub(r"[ \t]+\.", ".", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
 
 
 def _tokens(text: str) -> set[str]:
