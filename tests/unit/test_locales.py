@@ -52,6 +52,19 @@ def test_detect_and_normalize_answer_language() -> None:
     assert detect_question_language("Comment créer une écriture de journal?") == "fr_FR"
     assert detect_question_language("Wie erstelle ich eine Buchung?") == "de_DE"
     assert detect_question_language("Cómo crear un asiento contable?") == "es_ES"
+    assert (
+        detect_question_language(
+            "Qu'est-ce que les normes GAAP et quel est leur impact "
+            "sur les utilisateurs de Sage Intacct ?"
+        )
+        == "fr_FR"
+    )
+    assert (
+        detect_question_language(
+            "Qué son los GAAP y cómo afectan a los usuarios de Sage Intacct?"
+        )
+        == "es_ES"
+    )
     source, answer = normalize_answer_language(
         question="How do I reverse a journal entry?",
         answer_language="fr_FR",

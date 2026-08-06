@@ -71,7 +71,24 @@ Do **not** send raw support-issue text or full help chunks into Phrase unless lo
 
 
 
-DECISION: Adopt Option C. Privelaged users (localization team members and testers) in the Slack channel may opt to incur costs by sending materials to Phrase. All other team members with access to the slack channel will receive translations from the local translated help corpus or from the translategemma-12b model.
+DECISION: Adopt Option C. Privileged users (localization team members and testers) in the Slack channel may opt to incur costs by sending materials to Phrase or by calling **Microsoft / Azure trained MT** (T3). All other channel members receive translations from the local translated Help corpus, Phrase TM lookups (latency only), or `translategemma:12b`.
+
+## Ask answer localization router (Slack)
+
+See Hermes-Local [`docs/ask-localization-router.md`](../../Hermes-Local/docs/ask-localization-router.md) and [`docs/benchmarks.md`](../../Hermes-Local/docs/benchmarks.md).
+
+**Pillars:** quality / speed / cost.
+
+| Path | Tier | Notes |
+|---|---|---|
+| In-lang Help + lexical Help gate | T1 | Prefer published wording |
+| Phrase TM content search | T1 | Free; ~1.7s baseline — one hop max on Ask |
+| Termweb | T1 standalone | **Not** on Ask compose critical path (~7s baseline) |
+| translategemma:12b | T1 | Free fill-in (~0.8s warm) |
+| Microsoft trained MT | T3 | Explicit; Azure key in backend `.env` |
+| Phrase NextMT / create-job | T3 deferred | Not Ask one-shots |
+
+**Latency:** Ask compose additive budget ≤3s p50; skip hops when exhausted (`budget_partial`).
 
 ## Open questions for the Intacct / localization teams
 

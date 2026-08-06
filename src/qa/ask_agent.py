@@ -21,7 +21,7 @@ from src.models import (
     OkfConceptRef,
     SourceReference,
 )
-from src.rag.locales import normalize_answer_language
+from src.rag.locales import detect_question_language, normalize_answer_language
 from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
 from src.rag.okf.store import OkfStore
 from src.rag.rag_retriever import InsufficientEvidenceError, retrieve_help_content
@@ -63,7 +63,11 @@ _ALLOWED_HELP_URL_PREFIXES = (
 _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)", re.IGNORECASE)
 _BARE_URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.IGNORECASE)
 # Chroma / chunk source ids are sha-like hex; models often paste them into notes.
-_SOURCE_ID_TOKEN_RE = re.compile(r"\[?\b[a-f0-9]{40,64}\b\]?", re.IGNORECASE)
+# Also match 32-char md5-ish tokens and bracketed forms with spaces.
+_SOURCE_ID_TOKEN_RE = re.compile(
+    r"\[?\s*\b[a-f0-9]{32,64}\b\s*\]?",
+    re.IGNORECASE,
+)
 _HELP_FILE_TOKEN_RE = re.compile(r"\b[\w.-]+\.(?:xhtml|htm|html)\b", re.IGNORECASE)
 
 
@@ -165,38 +169,37 @@ class AskService:
                 )
 
             with stage(ask_id, "retrieve", self.tracker):
-                retrieved = retrieve_help_content(
-                    classification.search_query,
+                retrieved, follow_ups = _retrieve_with_followups(
+                    self.llm,
                     self.vector_store,
-                    self.llm,
-                    top_k=self.settings.rag_top_k,
-                    min_score=self.settings.rag_min_score,
-                    language=help_language,
-                )
-                retrieved = enrich_retrieved_with_okf(retrieved, self.okf_store)
-
-            with stage(ask_id, "retrieve_followup", self.tracker):
-                follow_ups = _plan_followups(
-                    self.llm,
+                    self.okf_store,
+                    self.settings,
                     question=issue.raw_text,
                     classification_query=classification.search_query,
-                    retrieved=retrieved,
                     help_language=help_language,
                 )
-                for query in follow_ups:
-                    try:
-                        more = retrieve_help_content(
-                            query,
-                            self.vector_store,
-                            self.llm,
-                            top_k=self.settings.rag_top_k,
-                            min_score=self.settings.rag_min_score,
-                            language=help_language,
-                        )
-                        more = enrich_retrieved_with_okf(more, self.okf_store)
-                        retrieved = _merge_chunks(retrieved, more)
-                    except InsufficientEvidenceError:
-                        continue
+
+            if not retrieved and help_language != "en_US":
+                # Localized Help may be thinner; fall back to English grounding.
+                with stage(ask_id, "retrieve_en_fallback", self.tracker):
+                    classification = classify_issue(
+                        issue, self.llm, help_language="en_US"
+                    )
+                    retrieved, follow_ups = _retrieve_with_followups(
+                        self.llm,
+                        self.vector_store,
+                        self.okf_store,
+                        self.settings,
+                        question=issue.raw_text,
+                        classification_query=classification.search_query,
+                        help_language="en_US",
+                    )
+                    log_event(
+                        "ask_en_grounding_fallback",
+                        run_id=ask_id,
+                        reason="empty_localized_retrieval",
+                        answer_language=answer_language,
+                    )
 
             if not retrieved:
                 raise InsufficientEvidenceError(
@@ -211,16 +214,56 @@ class AskService:
                     answer_language=answer_language,
                 )
 
+            # Non-English asks: if the localized pass refused, retry with English
+            # Help grounding while still answering in the user's language.
+            if refused_gap is not None and answer_language != "en_US":
+                with stage(ask_id, "answer_en_fallback", self.tracker):
+                    classification_en = classify_issue(
+                        issue, self.llm, help_language="en_US"
+                    )
+                    retrieved_en, follow_ups_en = _retrieve_with_followups(
+                        self.llm,
+                        self.vector_store,
+                        self.okf_store,
+                        self.settings,
+                        question=issue.raw_text,
+                        classification_query=classification_en.search_query,
+                        help_language="en_US",
+                    )
+                    if retrieved_en:
+                        classification = classification_en
+                        retrieved = retrieved_en
+                        follow_ups = follow_ups_en
+                        answer, refused_gap = _build_answer(
+                            self.llm,
+                            question=issue.raw_text,
+                            retrieved=retrieved,
+                            answer_language=answer_language,
+                        )
+                        log_event(
+                            "ask_en_grounding_fallback",
+                            run_id=ask_id,
+                            reason="localized_refuse",
+                            answer_language=answer_language,
+                        )
+
             if refused_gap is not None:
+                # Only attach sources when they look on-topic; otherwise the Slack
+                # "Help references" list contradicts the coverage warning.
+                refuse_sources = (
+                    [_as_source(chunk) for chunk in retrieved[:8]]
+                    if _titles_look_relevant(issue.raw_text, retrieved)
+                    else []
+                )
                 result = AskResult(
                     ask_id=ask_id,
                     status="refused",
                     classification=classification,
-                    sources=[_as_source(chunk) for chunk in retrieved[:8]],
+                    sources=refuse_sources,
                     okf_concepts=[
                         OkfConceptRef.model_validate(item)
                         for item in related_concepts_for_sources(
-                            [_as_source(chunk) for chunk in retrieved[:5]],
+                            refuse_sources[:5],
                             self.okf_store,
                         )
                     ],
@@ -233,6 +276,32 @@ class AskService:
                 self._write_result(result)
                 log_event("ask_refused", run_id=ask_id, error_code="INSUFFICIENT_HELP_COVERAGE")
                 return result
+
+            # T1 free localization when draft still leaks English for FR/DE/ES.
+            if answer is not None and answer_language != "en_US":
+                with stage(ask_id, "localize_compose", self.tracker):
+                    from src.qa.localize_compose import compose_localized_answer
+
+                    help_texts = [
+                        getattr(chunk, "text", "") or ""
+                        for chunk in retrieved[:8]
+                        if (getattr(chunk, "text", None) or "").strip()
+                    ]
+                    # Prefer in-lang Help text when we retrieved localized corpus;
+                    # EN-grounded chunks still help gate weakly via shared terms.
+                    answer, compose_report = compose_localized_answer(
+                        answer,
+                        answer_language=answer_language,
+                        help_texts=help_texts,
+                    )
+                    log_event(
+                        "ask_localize_compose",
+                        run_id=ask_id,
+                        engines=compose_report.engines,
+                        budget_partial=compose_report.budget_partial,
+                        elapsed_s=compose_report.elapsed_s,
+                        notes=compose_report.notes[:8],
+                    )
 
             sources = answer.sources
             result = AskResult(
@@ -286,6 +355,54 @@ class AskService:
         record = self.run_store.read(result.ask_id)
         record["result"] = result.model_dump(mode="json")
         self.run_store.write(result.ask_id, record)
+
+
+def _retrieve_with_followups(
+    llm: StructuredLLM,
+    vector_store: VectorStore,
+    okf_store: OkfStore,
+    settings: Settings,
+    *,
+    question: str,
+    classification_query: str,
+    help_language: str,
+) -> tuple[list, list[str]]:
+    """Retrieve Help chunks (+ optional follow-up queries) for one language."""
+    try:
+        retrieved = retrieve_help_content(
+            classification_query,
+            vector_store,
+            llm,
+            top_k=settings.rag_top_k,
+            min_score=settings.rag_min_score,
+            language=help_language,
+        )
+        retrieved = enrich_retrieved_with_okf(retrieved, okf_store)
+    except InsufficientEvidenceError:
+        retrieved = []
+
+    follow_ups = _plan_followups(
+        llm,
+        question=question,
+        classification_query=classification_query,
+        retrieved=retrieved,
+        help_language=help_language,
+    )
+    for query in follow_ups:
+        try:
+            more = retrieve_help_content(
+                query,
+                vector_store,
+                llm,
+                top_k=settings.rag_top_k,
+                min_score=settings.rag_min_score,
+                language=help_language,
+            )
+            more = enrich_retrieved_with_okf(more, okf_store)
+            retrieved = _merge_chunks(retrieved, more)
+        except InsufficientEvidenceError:
+            continue
+    return retrieved, follow_ups
 
 
 def _plan_followups(
@@ -389,9 +506,25 @@ def _draft_to_answer(
     user = (
         f"Question: {question}\n"
         f"answer_language: {answer_language}\n"
+        f"CRITICAL: Write the summary, every step instruction/detail, and all notes "
+        f"entirely in {answer_language}. Do not answer in English unless "
+        f"answer_language is en_US. Source excerpts may be English; still write "
+        f"the user-facing answer in {answer_language}.\n"
         f"Official help sources:\n{json.dumps(source_payload, ensure_ascii=False)}"
     )
     draft, model = llm.generate_structured(system, user, AnswerDraft)
+    # If the model ignored answer_language and wrote English, retry once harder.
+    if (
+        answer_language != "en_US"
+        and draft.summary
+        and detect_question_language(draft.summary, default="en_US") == "en_US"
+    ):
+        retry_system = (
+            system
+            + f"\nCRITICAL RETRY: Your previous draft was in English. "
+            f"Rewrite everything in {answer_language} only."
+        )
+        draft, model = llm.generate_structured(retry_system, user, AnswerDraft)
 
     steps: list[KnowledgeStep] = []
     used_citation_fallback = False

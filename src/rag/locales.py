@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,21 @@ _LANG_HINTS: dict[str, tuple[str, ...]] = {
         " ecriture",
         " fournisseur",
         " journal ",
+        " qu'est-ce ",
+        " qu’est-ce ",
+        " est-ce ",
+        " quel ",
+        " quelle ",
+        " leurs ",
+        " leur ",
+        " sur ",
+        " utilisateurs",
+        " utilisateur ",
+        " normes ",
+        " norme ",
+        " impact ",
+        " affectent ",
+        " affecte ",
     ),
     "de_DE": (
         " der ",
@@ -58,6 +74,12 @@ _LANG_HINTS: dict[str, tuple[str, ...]] = {
         " asiento",
         " proveedor",
         " contabilidad",
+        " qué ",
+        " que ",
+        " afectan ",
+        " afecta ",
+        " usuarios",
+        " usuario ",
     ),
 }
 
@@ -136,18 +158,24 @@ def assets_dir_for_locale(help_assets_dir: Path, locale: str) -> Path:
 
 def detect_question_language(text: str, default: str = "en_US") -> str:
     """Lightweight locale guess from character/word hints."""
-    lowered = f" {(text or '').lower()} "
+    raw = text or ""
+    lowered = f" {raw.lower()} "
+    # Normalize curly apostrophes so qu'est-ce matches.
+    lowered = lowered.replace("’", "'").replace("`", "'")
     scores = {loc: sum(1 for h in hints if h in lowered) for loc, hints in _LANG_HINTS.items()}
-    if any(ch in text for ch in "äöüß"):
+    if any(ch in raw for ch in "äöüß"):
         scores["de_DE"] = scores.get("de_DE", 0) + 3
-    if any(ch in text for ch in "àâçèêëîïôùûüÿœ"):
+    if any(ch in raw for ch in "àâçèêëîïôùûüÿœ"):
         scores["fr_FR"] = scores.get("fr_FR", 0) + 2
-    if any(ch in text for ch in "¿¡ñ"):
+    if any(ch in raw for ch in "¿¡ñ"):
         scores["es_ES"] = scores.get("es_ES", 0) + 3
     # Shared accent é/á/í/ó/ú — small boost to both FR and ES; word hints decide.
-    if any(ch in text for ch in "áéíóú"):
+    if any(ch in raw for ch in "áéíóú"):
         scores["fr_FR"] = scores.get("fr_FR", 0) + 1
         scores["es_ES"] = scores.get("es_ES", 0) + 1
+    # High-precision French openers (GAAP-style questions often miss older hints).
+    if re.search(r"(?i)\bqu'est-ce\b|\bquel(?:le)?s?\s+est\b|\bnormes?\b.*\bgaap\b", lowered):
+        scores["fr_FR"] = scores.get("fr_FR", 0) + 4
     best = max(scores, key=scores.get)
     if scores[best] >= 2:
         return best
