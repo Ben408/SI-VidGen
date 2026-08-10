@@ -61,7 +61,7 @@ def test_rejects_script_generation_without_sources() -> None:
         build_script(issue(), classification(), [], FakePipelineLLM())
 
 
-def test_repairs_draft_that_ignores_top_retrieval_sources() -> None:
+def test_repairs_draft_that_cites_outside_top_three() -> None:
     sources = [
         source().model_copy(
             update={
@@ -78,7 +78,8 @@ def test_repairs_draft_that_ignores_top_retrieval_sources() -> None:
 
         def generate_structured(self, _system, user, response_model):
             self.calls += 1
-            cited_source = "chunk-4" if self.calls == 1 else "chunk-1"
+            # chunk-4 is outside the top three; chunk-2 is allowed (not only top-1).
+            cited_source = "chunk-4" if self.calls == 1 else "chunk-2"
             if self.calls == 2:
                 assert "failed grounding review" in user
             return (
@@ -104,4 +105,41 @@ def test_repairs_draft_that_ignores_top_retrieval_sources() -> None:
     script = build_script(issue(), classification(), sources, llm)
 
     assert llm.calls == 2
-    assert script.scenes[0].source_ids == ["chunk-1"]
+    assert script.scenes[0].source_ids == ["chunk-2"]
+
+
+def test_accepts_script_citing_second_ranked_top_three_source() -> None:
+    sources = [
+        source().model_copy(
+            update={
+                "source_id": f"chunk-{index}",
+                "score": 1 - index / 10,
+                "heading_path": f"Heading {index}",
+            }
+        )
+        for index in range(1, 4)
+    ]
+
+    class SecondRankLLM:
+        def generate_structured(self, _system, _user, response_model):
+            return (
+                response_model.model_validate(
+                    {
+                        "title": "Correct the journal",
+                        "narration": "Review and correct the journal.",
+                        "scenes": [
+                            {
+                                "action": "Review",
+                                "visual": "Journal entry",
+                                "voiceover": "Review the journal entry.",
+                                "help_asset": "",
+                                "source_ids": ["chunk-2"],
+                            }
+                        ],
+                    }
+                ),
+                "second-rank-model",
+            )
+
+    script = build_script(issue(), classification(), sources, SecondRankLLM())
+    assert script.scenes[0].source_ids == ["chunk-2"]

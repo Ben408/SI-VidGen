@@ -17,9 +17,11 @@ Use only the supplied official-help excerpts. Do not add product steps or UI beh
 sources do not support. Every scene must cite one or more supplied source IDs.
 Always leave help_asset as an empty string; the application attaches Help screenshots after
 script generation. Describe visuals textually in the visual field.
-The sources are ordered by retrieval relevance. Prioritize the first source and do not substitute
-a related but different task. Create a concise, task-focused English script (3-6 scenes) that
-directly resolves the stated issue. Return structured data only."""
+The sources are ordered by retrieval relevance. Prefer earlier sources, but when a later
+top-three source is the procedure that matches the stated issue (for example a subsection
+of the same Help topic), cite that source rather than forcing an overview chunk. Do not
+substitute an unrelated task. Create a concise, task-focused English script (3-6 scenes)
+that directly resolves the stated issue. Return structured data only."""
 
 
 class SceneDraft(BaseModel):
@@ -71,9 +73,9 @@ def build_script(
         if attempt and grounding_error:
             repair = (
                 "\nThe prior draft failed grounding review: "
-                f"{grounding_error}. Regenerate the complete script. Every scene must use "
-                "the highest-relevance sources and directly solve the stated issue. "
-                "Leave help_asset empty."
+                f"{grounding_error}. Regenerate the complete script. Every scene must cite "
+                "at least one of the top-three supplied source_ids (copy ids exactly) and "
+                "directly solve the stated issue. Leave help_asset empty."
             )
         draft, model = llm.generate_structured(
             SYSTEM_PROMPT,
@@ -139,15 +141,17 @@ def _truncate_text(text: str, limit: int) -> str:
 
 
 def _validate_grounding(draft: ScriptDraft, retrieved: list[RetrievedChunk]) -> None:
+    """Require every scene to cite a top-three retrieval id.
+
+    Do not require the single highest-scoring chunk: retrieval often ranks an overview
+    slightly above the procedure subsection the Ask/script brief already committed to,
+    and absolute top-1 forcing caused RUN_GROUNDINGERROR on otherwise grounded drafts.
+    """
     valid_ids = {chunk.source_id for chunk in retrieved}
     priority_ids = {chunk.source_id for chunk in retrieved[:3]}
-    cited_ids: set[str] = set()
     for scene in draft.scenes:
-        cited_ids.update(scene.source_ids)
         unknown_ids = set(scene.source_ids) - valid_ids
         if unknown_ids:
             raise GroundingError(f"Scene cited unknown sources: {sorted(unknown_ids)}")
         if not set(scene.source_ids) & priority_ids:
             raise GroundingError("Scene did not cite a top-three retrieval source")
-    if retrieved[0].source_id not in cited_ids:
-        raise GroundingError("Script did not cite the highest-relevance retrieval source")

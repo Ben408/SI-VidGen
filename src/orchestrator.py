@@ -11,6 +11,7 @@ from src.llm.client import OllamaClient
 from src.models import (
     IssueInput,
     OkfConceptRef,
+    RetrievedChunk,
     ReviewAction,
     RunResult,
     Script,
@@ -158,6 +159,9 @@ class Orchestrator:
                     retrieved,
                     locale_library,
                     video_locale=target_language,
+                )
+                retrieved = _prefer_source_ids(
+                    retrieved, issue_input.preferred_source_ids
                 )
 
             with stage(run_id, "script", self.tracker):
@@ -549,3 +553,22 @@ class Orchestrator:
 
 def payload_exists(result: RunResult) -> bool:
     return bool(result.payload_path and Path(result.payload_path).is_file())
+
+
+def _prefer_source_ids(
+    retrieved: list[RetrievedChunk], preferred_ids: list[str]
+) -> list[RetrievedChunk]:
+    """Move Ask-cited (or caller-pinned) chunks to the front when present in retrieval."""
+    if not preferred_ids or not retrieved:
+        return retrieved
+    by_id = {chunk.source_id: chunk for chunk in retrieved}
+    pinned: list[RetrievedChunk] = []
+    seen: set[str] = set()
+    for source_id in preferred_ids:
+        chunk = by_id.get(source_id)
+        if chunk is None or source_id in seen:
+            continue
+        pinned.append(chunk)
+        seen.add(source_id)
+    rest = [chunk for chunk in retrieved if chunk.source_id not in seen]
+    return pinned + rest

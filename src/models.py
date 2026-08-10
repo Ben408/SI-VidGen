@@ -15,6 +15,8 @@ class IssueInput(BaseModel):
     answer_language: str | None = Field(default=None, max_length=10)
     # Video/script target locale (defaults to answer_language or en_US)
     target_language: str | None = Field(default=None, max_length=10)
+    # Mode 1 (Create from Ask): pin Ask-cited chunk ids to the front of retrieval.
+    preferred_source_ids: list[str] = Field(default_factory=list, max_length=12)
 
 
 class NormalizedIssue(BaseModel):
