@@ -1,0 +1,12 @@
+---
+description: Sibling Hermes/Slack Phrase UX decisions for localization front door
+alwaysApply: true
+---
+
+# Localization Slack continuity
+
+This repo (SI-VidGen) is the Ask/script/video API. Phrase discovery, multi-file create/upload, and Slack Hermes UX decisions live in:
+
+**`F:/Hermes-Local/docs/slack-phrase-discovery.md`**
+
+Cursor rules also exist in Hermes-Local and SI-VidGen-Slack. Read that doc before changing localization routing that Slack depends on.
