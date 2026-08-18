@@ -1,6 +1,7 @@
 # SI VidGen — Intacct Knowledge Studio
 
-Local-first prototype for **Sage Intacct** information developers, project managers, and internal staff.
+Local-first knowledge-bot for **Sage Intacct** information developers, project managers, and internal staff.
+ (change the target URL and reskin the UI for other implementations)
 
 ![Intacct Knowledge Studio UI — Create video tab](docs/images/knowledge-studio-ui.png)
 
@@ -8,13 +9,13 @@ Local-first prototype for **Sage Intacct** information developers, project manag
 |---|---|
 | **Create video** | Support issue → grounded script → Help-faithful local MP4 |
 | **Ask Intacct** | Product how-to answers from Help (multi-hop RAG; refuse if coverage is thin) |
-| **Footer → Re-ingest Help** | Refresh local Help cache, Chroma index, image library, and OKF |
+| **Re-ingest Help** | Refresh local Help cache, convert to OKF, Chroma re-index, regen image library, and OKFs |
 
 ---
 
 ## Runs without commercial cloud AI tokens
 
-The **default demo path is fully local**. Classification, embeddings, script/Q&A generation, and video composition do **not** call OpenAI, Anthropic, Google Gemini, Higgsfield, or other paid generative APIs.
+The **default path is fully local**. Classification, embeddings, script/Q&A generation, and video composition do **not** call OpenAI, Anthropic, Google Gemini, Higgsfield, or other paid generative APIs.
 
 | Capability | Default provider | Consumes commercial AI tokens? |
 |---|---|---|
@@ -24,25 +25,24 @@ The **default demo path is fully local**. Classification, embeddings, script/Q&A
 | Walkthrough video | **Local compositor** (Help PNGs + Edge TTS) | **No** |
 | Help crawl / OKF / image library | Your disk + public Help URLs | **No** (HTTP fetch of authorized Help only) |
 
-Optional `VIDEO_BACKEND=higgsfield` exists for experiments, but it is **not required** and is **off by default**. Leave it unset (or `local_compositor`) for shared testing with a collaborator.
+None of those are generative “token” bills from a commercial LLM/video vendor.
+
+Optional `VIDEO_BACKEND=higgsfield` exists for experiments, but it is **not required** and is **off by default**. Leave it unset (or `local_compositor`) for image fidelity. The problem with diffusion based video generation AI models is that they don't preserve things like screenshot or diagram integrity - explainers get a layer of AIslop text, etc. So the default here is that it is disabled and the app instead uses a local composition engine, utilizing screenshots and diagrams scraped along with the help content to compose videos rather than generate them. 
 
 You may still need normal network access to:
 
 - `git clone` / `npm install` / `pip install`
-- Crawl the authorized Intacct Help site when building or refreshing the corpus
-- Edge neural TTS (Microsoft Edge online voices). If offline, the compositor falls back to local TTS.
-
-None of those are generative “token” bills from a commercial LLM/video vendor.
+- Crawl a Help site when building or refreshing the corpus
+- Edge neural TTS (Microsoft Edge online voices). If offline, the compositor falls back to local TTS. (local TTS sounds like a 90s robot)
 
 ---
 
 ## What you get
 
-1. **Create video** — RAG over Flare-published Help XHTML (Chroma) + OKF enrichment → reviewable script → local MP4 that preserves Help screenshots.
-2. **Ask Intacct** — multi-hop Help Q&A with structured **summary → steps → notes** and live Help links; refuses when evidence is weak (coverage diagnostic).
-3. **Corpus refresh** — footer control re-scrapes Help and rebuilds Chroma, `help_assets`, and OKF (blocks other LLM work while running).
+1. **Create video** - RAG over Flare-published Help XHTML (Chroma) + OKF enrichment → reviewable script → local MP4 that preserves Help screenshots.
+2. **Ask Intacct** - multi-hop Help Q&A with structured **summary → steps → notes** and live Help links; refuses when evidence is weak (coverage diagnostic).
+3. **Corpus refresh** - footer control re-scrapes Help and rebuilds Chroma, `help_assets`, and OKF (blocks other LLM work while running).
 
-**Non-goals for V0:** multi-tenant SaaS, end-customer portals, live LMS publish, cloud LLM inference as the default, Flare authoring-source ingest, inventing UI screenshots.
 
 ---
 
@@ -86,17 +86,15 @@ Confirm `.env` keeps the local defaults:
 
 ### 3. Pull Ollama models
 
-**This app’s Ask / script / video chat model is still `gemma3:12b`.**  
-`qwen2.5-hermes` is for **Hermes-Local** (Slack `/hermes` fallback), not for Knowledge Studio Ask/script unless you deliberately change `.env` and retest.
+**This app’s Ask / script / video chat model is `gemma3:12b`.**  
+Other models can be used with Knowledge Studio Ask/script if you deliberately change `.env` and retest.
 
 ```powershell
-# Prefer models on F: (shared with Hermes / Slack host)
-$env:OLLAMA_MODELS = 'F:\OllamaModels'
 
 ollama pull gemma3:12b
 ollama pull llama3.2:latest
 ollama pull nomic-embed-text
-# Optional (Hermes free MT / agent — not required for UI Ask/video):
+# Optional:
 # ollama pull translategemma:12b
 # ollama pull qwen2.5:14b
 ```
@@ -105,7 +103,7 @@ On a smaller machine you can temporarily point `.env` at `llama3.2:latest` as `O
 
 ### 4. Build local Help knowledge (first time)
 
-Authorized English Help only (published XHTML). This downloads Help pages/images—not cloud LLM tokens.
+This downloads Help pages/images—not cloud LLM tokens.
 
 ```powershell
 # Full crawl + index (lengthy; polite delay)
@@ -153,14 +151,14 @@ Open **http://127.0.0.1:5173/**
 
 1. **Create video** — paste the sample from [`docs/sample_query.md`](docs/sample_query.md); generate draft; confirm sources + local compositor path.
 2. **Ask Intacct** — ask a how-to question; confirm steps + Help links (or a coverage refusal).
-3. Do **not** turn on Higgsfield unless you intentionally want a cloud video experiment.
+3. Do **not** turn on Higgsfield unless you intentionally want a cloud video experiment or don't care about screenshot/diagram fidelity.
 
 ### Sharing notes for collaborators
 
-- Runtime corpora (`data/help_xhtml/`, `data/help_assets/`, `data/okf/`, `data/vector_store/`) are **gitignored**—each machine builds its own (or copies a prebuilt data drop offline by agreement).
+- Runtime corpora (`data/help_xhtml/`, `data/help_assets/`, `data/okf/`, `data/vector_store/`) are **gitignored**—each machine builds its own.
 - Never commit `.env` or API keys.
 - Prefer the same Ollama model names as `.env.example` so results are comparable.
-- Corpus refresh from the UI footer is available to everyone in the prototype; it is lengthy and blocks video/Ask while running.
+- Corpus refresh from the UI footer is available to everyone; it is a lengthy process and blocks video/Ask while running.
 
 ---
 
@@ -215,9 +213,9 @@ Local scratch (probes, old outputs) lives under gitignored `archive/`.
 |---|---|---|
 | **SI-VidGen** (this) | Ask / video / corpus engine + HTTP API | **`gemma3:12b`** + `nomic-embed-text` |
 | **SI-VidGen-Slack** | Slack front door → VidGen API + Hermes | (none — routes only) |
-| **Hermes-Local** | Termweb / Phrase / free translate skills | Dispatcher + `translategemma:12b`; chat fallback `qwen2.5-hermes` |
+| **Hermes-Local** | Termweb / Phrase / free translate skills | Dispatcher + `translategemma:12b`; chat `qwen2.5-hermes` |
 
-Slack tokens, Phrase/Termweb secrets, and Hermes allowlists live only in the Slack / Hermes repos. This repo stays free of Slack SDKs.
+This repo stays free of Slack SDKs.
 
 See `DEVELOPMENT_STATUS.md` for the RAG language-filter fix and T1 smoke notes.
 
