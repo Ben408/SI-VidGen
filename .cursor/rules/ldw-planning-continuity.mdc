@@ -1,0 +1,16 @@
+---
+description: Private LDW ecosystem planning — sibling repos coordination
+alwaysApply: true
+---
+
+# LDW-Planning continuity
+
+Localization **document pipeline** and LDW module specs (private):
+
+**`F:/LDW-Planning`** — [Ben408/LDW-Planning](https://github.com/Ben408/LDW-Planning)
+
+Phrase/Slack Hermes UX (public sibling):
+
+**`F:/Hermes-Local/docs/slack-phrase-discovery.md`**
+
+Read LDW-Planning before changing routing that depends on LDW jobs, Okapi, or document translate. Do not publish private backlog to this repo.

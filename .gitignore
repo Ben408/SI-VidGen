@@ -1,5 +1,7 @@
 archive/
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 
 # Local runtime / generated artifacts
 data/help_xhtml/

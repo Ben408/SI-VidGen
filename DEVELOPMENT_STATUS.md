@@ -4,8 +4,8 @@ Living status for **SI VidGen / Intacct Knowledge Studio**.
 
 | Field | Value |
 |---|---|
-| **Last updated** | 2026-08-06 |
-| **Current phase** | Knowledge Studio + Slack/Hermes T1 UAT; T2/T3 in parallel |
+| **Last updated** | 2026-08-31 |
+| **Current phase** | Knowledge Studio + Slack/Hermes T1 UAT; **LDW Phase 1 core** (sibling); T2/T3 in parallel |
 | **Overall status** | English Ask / script / video work; Slack channel-default T1; Hermes Slack path is skill-only (no LLM chat fallback) |
 | **Prototype posture** | Local venv · Ollama · React+FastAPI · Chroma · OKF · Help image library · work gate |
 | **Chat model (this app)** | **`gemma3:12b`** via Ollama — **not** Qwen |
@@ -83,6 +83,7 @@ Shared host: `OLLAMA_MODELS=F:\OllamaModels` (preferred). Do not delete the C: O
 
 | Date | Change |
 |---|---|
+| 2026-08-31 | Sibling **TMXmatic Phase 2**: Okapi registry, Docker runner, submit-upload/job poll API, GUI panel |
 | 2026-08-06 | Slack `/hermes`: no LLM chat fallback; OOB refuse; GAAP/Intacct → Ask redirect (see Major decisions) |
 | 2026-08-04 | Ask scrub non-Help URLs + source_id hashes from free text |
 | 2026-07-31 | Fix Ask/script/video refuse when Chroma rows lack `language` metadata |
