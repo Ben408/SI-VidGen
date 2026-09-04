@@ -37,3 +37,9 @@ Chroma still indexes XHTML. After retrieval, OKF:
 - Official sources link to live Help
 - Derived concepts browsable on Create video and Ask results
 - `GET /api/okf/status`, `/api/okf/concepts`, `/api/okf/concepts/{id}`
+
+## Boundary vs Graph_Help
+
+[Graph_Help](https://github.com/Ben408/Graph_Help) shares this OKF convert/enrich core but adds **pack / skill-path** stamps (`pack_concept_ids`) and learner UX (practice, concept pages, What’s New).
+
+**SI-VidGen does not stamp or consume skill-path metadata in OKF YAML.** Ask uses OKF only for Help grounding (procedure text, section assets, browseable Help concepts). Port shared convert/format/store/enrich quality fixes from Graph when they improve those; leave pack stamps, pack catalog joins, and graph refresh stages in Graph_Help.

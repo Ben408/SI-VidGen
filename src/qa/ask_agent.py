@@ -22,9 +22,15 @@ from src.models import (
     SourceReference,
 )
 from src.rag.locales import detect_question_language, normalize_answer_language
-from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
+from src.qa.evidence import (
+    evidence_covers_goal,
+    retrieve_and_select_evidence,
+    scope_refuse_reason,
+    tokens as evidence_tokens,
+)
+from src.rag.okf.enrich import related_concepts_for_sources
 from src.rag.okf.store import OkfStore
-from src.rag.rag_retriever import InsufficientEvidenceError, retrieve_help_content
+from src.rag.rag_retriever import InsufficientEvidenceError
 from src.rag.vector_store import VectorStore
 from src.runtime_gate import BusyError, WorkGate
 from src.telemetry.logging import log_event, stage
@@ -42,11 +48,14 @@ Use only the supplied official Help excerpts (and derived OKF procedure text in 
 Produce a structured answer: summary, ordered steps, and notes.
 Write the entire answer in the requested answer_language.
 Every step must cite one or more supplied source_ids (copy ids exactly from the sources).
-Set coverage_sufficient=true whenever a supplied Help topic directly addresses the goal
-(for example a topic titled like "Reverse journal entries" for reversing a GL journal).
-Answer from those excerpts even if some edge cases are missing; put caveats in notes.
-Set coverage_sufficient=false ONLY when the sources clearly do not cover the procedure at all.
+Set coverage_sufficient=true only when the supplied excerpts directly support the
+original user goal end-to-end (not a nearby or related task).
+Set coverage_sufficient=false when the excerpts are off-goal, partial in a way that
+would mislead, or do not contain the procedure the user asked for.
 Do not invent navigation or UI steps that are absent from the excerpts.
+Do not broaden the answer into adjacent approvals, imports, configuration, or
+unrelated modules unless those steps are explicitly required by the cited excerpts
+for this same goal.
 Do not include external websites, vendor tools, or any URL that is not an official
 Sage Intacct Help link from the supplied sources (https://www.intacct.com/ia/docs/…).
 Never recommend third-party DNS, email, or network utilities. Help topic titles and
@@ -151,6 +160,8 @@ class AskService:
 
         self._write_status(ask_id, "processing")
         log_event("ask_started", run_id=ask_id)
+        classification = None
+        retrieved: list = []
         try:
             with stage(ask_id, "intake", self.tracker):
                 issue = normalize_issue(question)
@@ -168,8 +179,28 @@ class AskService:
                     issue, self.llm, help_language=help_language
                 )
 
+            scope_gap = scope_refuse_reason(issue.raw_text, classification)
+            if scope_gap:
+                result = AskResult(
+                    ask_id=ask_id,
+                    status="refused",
+                    classification=classification,
+                    coverage_gap=scope_gap,
+                    error_code="INSUFFICIENT_HELP_COVERAGE",
+                    error_detail=scope_gap,
+                    source_language=source_language,
+                    answer_language=answer_language,
+                )
+                self._write_result(result)
+                log_event(
+                    "ask_refused",
+                    run_id=ask_id,
+                    error_code="SCOPE_OR_CONFIDENCE_GATE",
+                )
+                return result
+
             with stage(ask_id, "retrieve", self.tracker):
-                retrieved, follow_ups = _retrieve_with_followups(
+                retrieved, follow_ups = retrieve_and_select_evidence(
                     self.llm,
                     self.vector_store,
                     self.okf_store,
@@ -177,6 +208,7 @@ class AskService:
                     question=issue.raw_text,
                     classification_query=classification.search_query,
                     help_language=help_language,
+                    plan_followups=_plan_followups,
                 )
 
             if not retrieved and help_language != "en_US":
@@ -185,7 +217,10 @@ class AskService:
                     classification = classify_issue(
                         issue, self.llm, help_language="en_US"
                     )
-                    retrieved, follow_ups = _retrieve_with_followups(
+                    scope_gap = scope_refuse_reason(issue.raw_text, classification)
+                    if scope_gap:
+                        raise InsufficientEvidenceError(scope_gap)
+                    retrieved, follow_ups = retrieve_and_select_evidence(
                         self.llm,
                         self.vector_store,
                         self.okf_store,
@@ -193,6 +228,7 @@ class AskService:
                         question=issue.raw_text,
                         classification_query=classification.search_query,
                         help_language="en_US",
+                        plan_followups=_plan_followups,
                     )
                     log_event(
                         "ask_en_grounding_fallback",
@@ -205,6 +241,10 @@ class AskService:
                 raise InsufficientEvidenceError(
                     "Not enough Help coverage to answer this product question"
                 )
+
+            evidence_gap = evidence_covers_goal(issue.raw_text, retrieved)
+            if evidence_gap:
+                raise InsufficientEvidenceError(evidence_gap)
 
             with stage(ask_id, "answer", self.tracker):
                 answer, refused_gap = _build_answer(
@@ -221,31 +261,37 @@ class AskService:
                     classification_en = classify_issue(
                         issue, self.llm, help_language="en_US"
                     )
-                    retrieved_en, follow_ups_en = _retrieve_with_followups(
-                        self.llm,
-                        self.vector_store,
-                        self.okf_store,
-                        self.settings,
-                        question=issue.raw_text,
-                        classification_query=classification_en.search_query,
-                        help_language="en_US",
-                    )
-                    if retrieved_en:
-                        classification = classification_en
-                        retrieved = retrieved_en
-                        follow_ups = follow_ups_en
-                        answer, refused_gap = _build_answer(
+                    scope_gap = scope_refuse_reason(issue.raw_text, classification_en)
+                    if scope_gap is None:
+                        retrieved_en, follow_ups_en = retrieve_and_select_evidence(
                             self.llm,
+                            self.vector_store,
+                            self.okf_store,
+                            self.settings,
                             question=issue.raw_text,
-                            retrieved=retrieved,
-                            answer_language=answer_language,
+                            classification_query=classification_en.search_query,
+                            help_language="en_US",
+                            plan_followups=_plan_followups,
                         )
-                        log_event(
-                            "ask_en_grounding_fallback",
-                            run_id=ask_id,
-                            reason="localized_refuse",
-                            answer_language=answer_language,
+                        evidence_gap = evidence_covers_goal(
+                            issue.raw_text, retrieved_en
                         )
+                        if retrieved_en and evidence_gap is None:
+                            classification = classification_en
+                            retrieved = retrieved_en
+                            follow_ups = follow_ups_en
+                            answer, refused_gap = _build_answer(
+                                self.llm,
+                                question=issue.raw_text,
+                                retrieved=retrieved,
+                                answer_language=answer_language,
+                            )
+                            log_event(
+                                "ask_en_grounding_fallback",
+                                run_id=ask_id,
+                                reason="localized_refuse",
+                                answer_language=answer_language,
+                            )
 
             if refused_gap is not None:
                 # Only attach sources when they look on-topic; otherwise the Slack
@@ -322,9 +368,18 @@ class AskService:
             log_event("ask_completed", run_id=ask_id)
             return result
         except InsufficientEvidenceError as exc:
+            refuse_sources = (
+                [_as_source(chunk) for chunk in retrieved[:8]]
+                if retrieved and _titles_look_relevant(
+                    getattr(question, "text", "") or "", retrieved
+                )
+                else []
+            )
             result = AskResult(
                 ask_id=ask_id,
                 status="refused",
+                classification=classification,
+                sources=refuse_sources,
                 coverage_gap=str(exc),
                 error_code="INSUFFICIENT_HELP_COVERAGE",
                 error_detail=str(exc),
@@ -357,54 +412,6 @@ class AskService:
         self.run_store.write(result.ask_id, record)
 
 
-def _retrieve_with_followups(
-    llm: StructuredLLM,
-    vector_store: VectorStore,
-    okf_store: OkfStore,
-    settings: Settings,
-    *,
-    question: str,
-    classification_query: str,
-    help_language: str,
-) -> tuple[list, list[str]]:
-    """Retrieve Help chunks (+ optional follow-up queries) for one language."""
-    try:
-        retrieved = retrieve_help_content(
-            classification_query,
-            vector_store,
-            llm,
-            top_k=settings.rag_top_k,
-            min_score=settings.rag_min_score,
-            language=help_language,
-        )
-        retrieved = enrich_retrieved_with_okf(retrieved, okf_store)
-    except InsufficientEvidenceError:
-        retrieved = []
-
-    follow_ups = _plan_followups(
-        llm,
-        question=question,
-        classification_query=classification_query,
-        retrieved=retrieved,
-        help_language=help_language,
-    )
-    for query in follow_ups:
-        try:
-            more = retrieve_help_content(
-                query,
-                vector_store,
-                llm,
-                top_k=settings.rag_top_k,
-                min_score=settings.rag_min_score,
-                language=help_language,
-            )
-            more = enrich_retrieved_with_okf(more, okf_store)
-            retrieved = _merge_chunks(retrieved, more)
-        except InsufficientEvidenceError:
-            continue
-    return retrieved, follow_ups
-
-
 def _plan_followups(
     llm: StructuredLLM,
     *,
@@ -430,7 +437,7 @@ def _plan_followups(
     )
     draft, _model = llm.generate_structured(PLAN_SYSTEM, user, FollowUpPlan)
     queries: list[str] = []
-    seen = {classification_query.strip().lower()}
+    seen = {classification_query.strip().lower(), question.strip().lower()}
     for item in draft.additional_queries:
         cleaned = " ".join(item.split()).strip()
         if len(cleaned) < 3:
@@ -452,28 +459,16 @@ def _build_answer(
     retrieved: list,
     answer_language: str = "en_US",
 ) -> tuple[KnowledgeAnswer | None, str | None]:
-    grounded = retrieved[:8]
-    answer, refused_gap = _draft_to_answer(
+    grounded = retrieved[:MAX_GROUNDED]
+    return _draft_to_answer(
         llm,
         question=question,
         grounded=grounded,
         answer_language=answer_language,
     )
-    if answer is not None:
-        return answer, None
-    if refused_gap is not None and _titles_look_relevant(question, grounded):
-        answer, refused_gap = _draft_to_answer(
-            llm,
-            question=question,
-            grounded=grounded,
-            force_answer=True,
-            answer_language=answer_language,
-        )
-        if answer is not None:
-            return answer, None
-    return None, refused_gap or (
-        "Not enough Help coverage to answer this product question"
-    )
+
+
+MAX_GROUNDED = 8
 
 
 def _draft_to_answer(
@@ -481,7 +476,6 @@ def _draft_to_answer(
     *,
     question: str,
     grounded: list,
-    force_answer: bool = False,
     answer_language: str = "en_US",
 ) -> tuple[KnowledgeAnswer | None, str | None]:
     allowed_ids = {chunk.source_id for chunk in grounded}
@@ -495,24 +489,18 @@ def _draft_to_answer(
         }
         for chunk in grounded
     ]
-    system = ANSWER_SYSTEM
-    if force_answer:
-        system = (
-            ANSWER_SYSTEM
-            + "\nIMPORTANT: Relevant Help topics were already retrieved for this question. "
-            "You MUST set coverage_sufficient=true and produce grounded steps. "
-            "Copy source_id values exactly from the supplied sources."
-        )
     user = (
-        f"Question: {question}\n"
+        f"Original user goal: {question}\n"
         f"answer_language: {answer_language}\n"
         f"CRITICAL: Write the summary, every step instruction/detail, and all notes "
         f"entirely in {answer_language}. Do not answer in English unless "
         f"answer_language is en_US. Source excerpts may be English; still write "
         f"the user-facing answer in {answer_language}.\n"
+        f"Answer only the original user goal. If these sources do not support that "
+        f"goal, set coverage_sufficient=false and leave steps empty.\n"
         f"Official help sources:\n{json.dumps(source_payload, ensure_ascii=False)}"
     )
-    draft, model = llm.generate_structured(system, user, AnswerDraft)
+    draft, model = llm.generate_structured(ANSWER_SYSTEM, user, AnswerDraft)
     # If the model ignored answer_language and wrote English, retry once harder.
     if (
         answer_language != "en_US"
@@ -520,62 +508,11 @@ def _draft_to_answer(
         and detect_question_language(draft.summary, default="en_US") == "en_US"
     ):
         retry_system = (
-            system
+            ANSWER_SYSTEM
             + f"\nCRITICAL RETRY: Your previous draft was in English. "
             f"Rewrite everything in {answer_language} only."
         )
         draft, model = llm.generate_structured(retry_system, user, AnswerDraft)
-
-    steps: list[KnowledgeStep] = []
-    used_citation_fallback = False
-    for item in draft.steps:
-        cited = [source_id for source_id in item.source_ids if source_id in allowed_ids]
-        if not cited and grounded:
-            cited = [grounded[0].source_id]
-            used_citation_fallback = True
-        if not cited:
-            continue
-        steps.append(
-            KnowledgeStep(
-                instruction=item.instruction,
-                detail=item.detail,
-                source_ids=cited,
-            )
-        )
-
-    if steps:
-        notes = [note.strip() for note in draft.notes if note.strip()]
-        if not draft.coverage_sufficient:
-            gap = draft.coverage_gap.strip()
-            if gap:
-                notes.append(f"Coverage note: {gap}")
-        if used_citation_fallback:
-            notes.append(
-                "Step citations were normalized to retrieved Help topics "
-                "because the model returned non-matching source ids."
-            )
-        steps = [
-            KnowledgeStep(
-                instruction=scrub_ask_free_text(step.instruction),
-                detail=scrub_ask_free_text(step.detail),
-                source_ids=step.source_ids,
-            )
-            for step in steps
-            if scrub_ask_free_text(step.instruction)
-        ]
-        notes = [scrub_ask_free_text(note) for note in notes]
-        notes = [note for note in notes if note]
-        sources = [_as_source(chunk) for chunk in grounded]
-        return (
-            KnowledgeAnswer(
-                summary=scrub_ask_free_text(draft.summary),
-                steps=steps,
-                notes=notes,
-                generation_model=model,
-                sources=sources,
-            ),
-            None,
-        )
 
     if not draft.coverage_sufficient:
         gap = draft.coverage_gap.strip() or (
@@ -583,39 +520,67 @@ def _draft_to_answer(
         )
         return None, gap
 
-    return None, (
-        "Not enough Help coverage to answer this product question "
-        "(answer steps could not be grounded in retrieved sources)"
+    steps: list[KnowledgeStep] = []
+    cited_ids: set[str] = set()
+    for item in draft.steps:
+        cited = [source_id for source_id in item.source_ids if source_id in allowed_ids]
+        if not cited:
+            # Never substitute the first retrieved source for a missing citation.
+            continue
+        instruction = scrub_ask_free_text(item.instruction)
+        if not instruction:
+            continue
+        cited_ids.update(cited)
+        steps.append(
+            KnowledgeStep(
+                instruction=instruction,
+                detail=scrub_ask_free_text(item.detail),
+                source_ids=cited,
+            )
+        )
+
+    if not steps:
+        return None, (
+            "Not enough Help coverage to answer this product question "
+            "(answer steps could not be grounded in retrieved sources)"
+        )
+
+    notes = [scrub_ask_free_text(note) for note in draft.notes if note.strip()]
+    notes = [note for note in notes if note]
+    sources = [
+        _as_source(chunk) for chunk in grounded if chunk.source_id in cited_ids
+    ]
+    return (
+        KnowledgeAnswer(
+            summary=scrub_ask_free_text(draft.summary),
+            steps=steps,
+            notes=notes,
+            generation_model=model,
+            sources=sources,
+        ),
+        None,
     )
 
 
 def _titles_look_relevant(question: str, retrieved: list) -> bool:
-    question_tokens = _tokens(question)
+    question_tokens = evidence_tokens(question)
     if len(question_tokens) < 2:
         return False
     for chunk in retrieved[:4]:
-        title_tokens = _tokens(f"{chunk.title} {chunk.heading_path}")
+        title_tokens = evidence_tokens(f"{chunk.title} {chunk.heading_path}")
         if len(question_tokens & title_tokens) >= 2:
             return True
     return False
 
 
-_STOPWORDS = {
-    "a",
-    "an",
-    "the",
-    "to",
-    "of",
-    "and",
-    "or",
-    "for",
-    "in",
-    "on",
-    "how",
-    "do",
-    "i",
-    "is",
-}
+def _as_source(chunk) -> SourceReference:
+    return SourceReference(
+        source_id=chunk.source_id,
+        source_url=chunk.source_url,
+        title=chunk.title,
+        heading_path=chunk.heading_path,
+        score=chunk.score,
+    )
 
 
 def is_allowed_help_url(url: str) -> bool:
@@ -668,32 +633,3 @@ def _tidy_scrubbed_text(text: str) -> str:
     cleaned = re.sub(r"[ \t]+\.", ".", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     return cleaned.strip()
-
-
-def _tokens(text: str) -> set[str]:
-    return {
-        token
-        for token in "".join(
-            ch.lower() if ch.isalnum() else " " for ch in text
-        ).split()
-        if len(token) > 2 and token not in _STOPWORDS
-    }
-
-
-def _merge_chunks(existing: list, more: list) -> list:
-    by_id = {chunk.source_id: chunk for chunk in existing}
-    for chunk in more:
-        prior = by_id.get(chunk.source_id)
-        if prior is None or chunk.score > prior.score:
-            by_id[chunk.source_id] = chunk
-    return sorted(by_id.values(), key=lambda item: item.score, reverse=True)
-
-
-def _as_source(chunk) -> SourceReference:
-    return SourceReference(
-        source_id=chunk.source_id,
-        source_url=chunk.source_url,
-        title=chunk.title,
-        heading_path=chunk.heading_path,
-        score=chunk.score,
-    )
