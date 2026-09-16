@@ -1,6 +1,7 @@
 # SI VidGen — Intacct Knowledge Studio
 
 Local-first knowledge-bot for **Sage Intacct** information developers, project managers, and internal staff.
+This is a locally runnable demo implementation.
  (change the target URL and reskin the UI for other implementations)
 
 ![Intacct Knowledge Studio UI — Create video tab](docs/images/knowledge-studio-ui.png)
@@ -13,7 +14,7 @@ Local-first knowledge-bot for **Sage Intacct** information developers, project m
 
 ---
 
-## Runs without commercial cloud AI tokens
+## This demo implementation Runs without commercial cloud AI tokens
 
 The **default path is fully local**. Classification, embeddings, script/Q&A generation, and video composition do **not** call OpenAI, Anthropic, Google Gemini, Higgsfield, or other paid generative APIs.
 
@@ -27,19 +28,20 @@ The **default path is fully local**. Classification, embeddings, script/Q&A gene
 
 None of those are generative “token” bills from a commercial LLM/video vendor.
 
-Optional `VIDEO_BACKEND=higgsfield` exists for experiments, but it is **not required** and is **off by default**. Leave it unset (or `local_compositor`) for image fidelity. The problem with diffusion based video generation AI models is that they don't preserve things like screenshot or diagram integrity - explainers get a layer of AIslop text, etc. So the default here is that it is disabled and the app instead uses a local composition engine, utilizing screenshots and diagrams scraped along with the help content to compose videos rather than generate them. 
+Optional `VIDEO_BACKEND=higgsfield` exists for experiments, but it is **not required** and is **off by default**. Leave it unset (or `local_compositor`) for image fidelity. (Composing videos from screenshots is best for product walk-throughs, Gnerating them through Higgsfield is better for marketing style videos where product UI is not the focus.) 
+The problem with diffusion based video generation AI models is that they don't preserve things like screenshot or diagram integrity - explainers get a layer of AIslop text, etc. So the default here is that it is disabled and the app instead uses a local composition engine, utilizing screenshots and diagrams scraped along with the help content to compose videos rather than generate them. 
 
 You may still need normal network access to:
 
 - `git clone` / `npm install` / `pip install`
 - Crawl a Help site when building or refreshing the corpus
-- Edge neural TTS (Microsoft Edge online voices). If offline, the compositor falls back to local TTS. (local TTS sounds like a 90s robot)
+- Edge neural TTS (Microsoft Edge online voices). If offline, the compositor falls back to local TTS. (local TTS sounds like a 90s robot, Edge neural is nice + free but requires accessing a remote API)
 
 ---
 
 ## What you get
 
-1. **Create video** - RAG over Flare-published Help XHTML (Chroma) + OKF enrichment → reviewable script → local MP4 that preserves Help screenshots.
+1. **Create video** - RAG over published Help XHTML (Chroma) + OKF enrichment → reviewable script → MP4 that preserves Help screenshots.
 2. **Ask Intacct** - multi-hop Help Q&A with structured **summary → steps → notes** and live Help links; refuses when evidence is weak (coverage diagnostic).
 3. **Corpus refresh** - footer control re-scrapes Help and rebuilds Chroma, `help_assets`, and OKF (blocks other LLM work while running).
 
@@ -48,7 +50,7 @@ You may still need normal network access to:
 
 ## Run on another computer (collaborator setup)
 
-Use a Windows machine with a recent GPU if possible (RTX 4070–class is the reference). CPU-only Ollama works for smoke tests but will be slow.
+Use a Windows machine with a recent GPU if possible (RTX 40xx–class is the reference). CPU-only Ollama works for smoke tests but will be slow.
 
 ### 1. Prerequisites
 
@@ -82,12 +84,12 @@ Confirm `.env` keeps the local defaults:
 
 - `VIDEO_BACKEND=local_compositor`
 - `OLLAMA_BASE_URL=http://127.0.0.1:11434`
-- Leave `HIGGSFIELD_API_KEY` empty
+- Leave `HIGGSFIELD_API_KEY` empty for product walkthrough style videos
 
 ### 3. Pull Ollama models
 
 **This app’s Ask / script / video chat model is `gemma3:12b`.**  
-Other models can be used with Knowledge Studio Ask/script if you deliberately change `.env` and retest.
+Other models can be used with Knowledge Studio Ask/script if you deliberately change `.env`.
 
 ```powershell
 
@@ -99,11 +101,9 @@ ollama pull nomic-embed-text
 # ollama pull qwen2.5:14b
 ```
 
-On a smaller machine you can temporarily point `.env` at `llama3.2:latest` as `OLLAMA_CHAT_MODEL` for faster (lower-quality) iteration.
-
 ### 4. Build local Help knowledge (first time)
 
-This downloads Help pages/images—not cloud LLM tokens.
+This downloads Help pages/images—does not consume cloud LLM tokens.
 
 ```powershell
 # Full crawl + index (lengthy; polite delay)
@@ -151,7 +151,7 @@ Open **http://127.0.0.1:5173/**
 
 1. **Create video** — paste the sample from [`docs/sample_query.md`](docs/sample_query.md); generate draft; confirm sources + local compositor path.
 2. **Ask Intacct** — ask a how-to question; confirm steps + Help links (or a coverage refusal).
-3. Do **not** turn on Higgsfield unless you intentionally want a cloud video experiment or don't care about screenshot/diagram fidelity.
+3. Do **not** turn on Higgsfield unless you intentionally want a cloud video and don't care about screenshot/diagram fidelity.
 
 ### Sharing notes for collaborators
 
@@ -182,6 +182,7 @@ flowchart TD
 ```
 
 A shared **work gate** keeps video, Ask, and refresh from overlapping on the local LLM.
+The big difference between this and previous chatbot patters in the OKF conversion pipeline. It's truly magical.
 
 ---
 
@@ -213,7 +214,7 @@ Local scratch (probes, old outputs) lives under gitignored `archive/`.
 |---|---|---|
 | **SI-VidGen** (this) | Ask / video / corpus engine + HTTP API | **`gemma3:12b`** + `nomic-embed-text` |
 | **SI-VidGen-Slack** | Slack front door → VidGen API + Hermes | (none — routes only) |
-| **Hermes-Local** | Termweb / Phrase / free translate skills | Dispatcher + `translategemma:12b`; chat `qwen2.5-hermes` |
+| **Hermes-Local** | Termweb / TMS / free translate skills | Dispatcher + `translategemma:12b`; chat + tools `qwen2.5-hermes` |
 
 This repo stays free of Slack SDKs.
 
