@@ -1,10 +1,14 @@
-"""Sage Intacct Help locale tags and crawl helpers."""
+"""Help locale tags and crawl helpers."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config.settings import Settings
 
 HELP_LOCALES: tuple[str, ...] = ("en_US", "fr_FR", "de_DE", "es_ES")
 
@@ -95,17 +99,64 @@ class HelpLocaleSpec:
         return self.locale
 
 
-def help_base_url() -> str:
-    return "https://www.intacct.com/ia/docs"
+def _settings(settings: Settings | None = None) -> Settings:
+    if settings is not None:
+        return settings
+    from config.settings import get_settings
+
+    return get_settings()
 
 
-def locale_spec(locale: str) -> HelpLocaleSpec:
+def _ensure_trailing_slash(url: str) -> str:
+    return url if url.endswith("/") else f"{url}/"
+
+
+def _base_and_env_locale(allowed_prefix: str) -> tuple[str, str | None]:
+    """Derive crawl base URL and embedded locale (if any) from allowed prefix."""
+    prefix = (allowed_prefix or "").rstrip("/")
+    for loc in HELP_LOCALES:
+        marker = f"/{loc}/help_action"
+        if prefix.endswith(marker):
+            return prefix[: -len(marker)], loc
+    return prefix, None
+
+
+def help_base_url(settings: Settings | None = None) -> str:
+    """Return the Help crawl base from the catalog (or test) allowed prefix."""
+    cfg = _settings(settings)
+    base, _ = _base_and_env_locale(cfg.help_allowed_prefix)
+    return base
+
+
+def locale_spec(locale: str, settings: Settings | None = None) -> HelpLocaleSpec:
+    """Build start/allowed URLs for a locale from catalog Help settings.
+
+    When the configured prefix embeds a locale (``.../{locale}/help_action/``),
+    other locales are derived by substituting the locale tag. When it does not
+    (e.g. a Confluence space root), the configured start/prefix are used as-is.
+    """
     if locale not in HELP_LOCALES:
         raise ValueError(f"Unsupported help locale: {locale}")
-    prefix = f"{help_base_url()}/{locale}/help_action/"
+    cfg = _settings(settings)
+    base, env_locale = _base_and_env_locale(cfg.help_allowed_prefix)
+    start = cfg.help_start_url
+    allowed = _ensure_trailing_slash(cfg.help_allowed_prefix)
+
+    if env_locale is None or locale == env_locale:
+        return HelpLocaleSpec(
+            locale=locale,
+            start_url=start,
+            allowed_prefix=allowed,
+        )
+
+    prefix = f"{base}/{locale}/help_action/"
+    if f"/{env_locale}/" in start:
+        start_url = start.replace(f"/{env_locale}/", f"/{locale}/", 1)
+    else:
+        start_url = f"{prefix}Intacct_basics/welcome.htm"
     return HelpLocaleSpec(
         locale=locale,
-        start_url=f"{prefix}Intacct_basics/welcome.htm",
+        start_url=start_url,
         allowed_prefix=prefix,
     )
 
@@ -130,12 +181,11 @@ def parse_locales(raw: str) -> list[str]:
 
 
 def locale_from_help_url(url: str) -> str | None:
-    marker = "/ia/docs/"
-    if marker not in url:
-        return None
-    rest = url.split(marker, 1)[1]
-    tag = rest.split("/", 1)[0]
-    return tag if tag in HELP_LOCALES else None
+    """Return a Help locale path tag if present as a ``/{locale}/`` segment."""
+    for loc in HELP_LOCALES:
+        if f"/{loc}/" in url:
+            return loc
+    return None
 
 
 def cache_dir_for_locale(help_cache_dir: Path, locale: str) -> Path:

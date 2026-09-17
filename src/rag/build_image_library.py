@@ -30,14 +30,23 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Comma list or 'all' (default: HELP_LOCALES / en_US).",
     )
+    parser.add_argument(
+        "--corpus-id",
+        default=None,
+        help="Optional Slack/tenant corpus id (data/corpora/{id}/).",
+    )
     args = parser.parse_args(argv)
     settings = get_settings()
+    from src.rag.corpus_paths import resolve_corpus_paths
+
+    paths = resolve_corpus_paths(settings, args.corpus_id)
+    paths.ensure()
     locales = parse_locales(args.locales) if args.locales else parse_locales(settings.help_locales)
     exit_code = 0
     reports: list[dict[str, object]] = []
     for locale in locales:
-        cache_dir = cache_dir_for_locale(settings.help_cache_dir, locale)
-        library_dir = assets_dir_for_locale(settings.help_assets_dir, locale)
+        cache_dir = cache_dir_for_locale(paths.help_cache_dir, locale)
+        library_dir = assets_dir_for_locale(paths.help_assets_dir, locale)
         if not (cache_dir / "manifest.json").is_file():
             reports.append(
                 {

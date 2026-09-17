@@ -4,13 +4,26 @@
 
 Start URL:
 
-`https://www.intacct.com/ia/docs/en_US/help_action/Intacct_basics/welcome.htm`
+`https://termweb.atlassian.net/wiki/spaces/TWKB/overview`
 
-Follow only URLs on `www.intacct.com` whose paths start with:
+Follow only URLs on `termweb.atlassian.net` whose paths start with:
 
-`/ia/docs/en_US/help_action/`
+`/wiki/spaces/TWKB/`
 
-Do not ingest MadCap Flare authoring/source files.
+Configure start URL and allowed prefix in `config/corpus_catalog.txt` (`start_url, allowed_prefix, corpus_id` per row). Omitting `corpus_id` uses the **first** catalog row as the legacy default corpus.
+
+Named corpora with different Help sites belong in `config/corpus_catalog.txt` (see `config/corpus_catalog.example.txt`):
+
+```text
+https://help.example.com/welcome.htm, https://help.example.com/, acme-kb
+```
+
+```powershell
+python -m src.rag.ingest_catalog --full
+python -m src.rag.ingest_catalog --full --corpus-id acme-kb
+```
+
+Ask/runs then send `corpus_id`. Refresh `POST /api/corpus/refresh` with `{ "corpus_id": "acme-kb" }` uses that catalog row’s URLs. The default corpus (no id) uses the first catalog row.
 
 ## Update cadence
 

@@ -4,17 +4,31 @@ from pathlib import Path
 
 import httpx
 
+from config.settings import Settings
 from src.rag.locales import (
     HELP_LOCALES,
     assets_dir_for_locale,
     detect_question_language,
     edge_voice_for_locale,
+    help_base_url,
     locale_from_help_url,
     locale_spec,
     normalize_answer_language,
     parse_locales,
 )
 from src.rag.xhtml_ingest import XhtmlCrawler
+
+_LOCALE_SCOPED_SETTINGS = Settings(
+    help_start_url=(
+        "https://help.example.com/docs/en_US/help_action/Intacct_basics/welcome.htm"
+    ),
+    help_allowed_prefix="https://help.example.com/docs/en_US/help_action/",
+)
+
+_TERMWEB_SETTINGS = Settings(
+    help_start_url="https://termweb.atlassian.net/wiki/spaces/TWKB/overview",
+    help_allowed_prefix="https://termweb.atlassian.net/wiki/spaces",
+)
 
 
 def test_parse_locales_all_and_csv() -> None:
@@ -24,16 +38,24 @@ def test_parse_locales_all_and_csv() -> None:
 
 
 def test_locale_specs_match_live_path_tags() -> None:
+    assert help_base_url(_LOCALE_SCOPED_SETTINGS) == "https://help.example.com/docs"
     for loc in HELP_LOCALES:
-        spec = locale_spec(loc)
+        spec = locale_spec(loc, settings=_LOCALE_SCOPED_SETTINGS)
         assert f"/{loc}/help_action/" in spec.allowed_prefix
         assert spec.start_url.startswith(spec.allowed_prefix)
+
+
+def test_locale_spec_uses_catalog_urls_without_locale_tag() -> None:
+    assert help_base_url(_TERMWEB_SETTINGS) == "https://termweb.atlassian.net/wiki/spaces"
+    spec = locale_spec("en_US", settings=_TERMWEB_SETTINGS)
+    assert spec.start_url == _TERMWEB_SETTINGS.help_start_url
+    assert spec.allowed_prefix == "https://termweb.atlassian.net/wiki/spaces/"
 
 
 def test_locale_from_help_url() -> None:
     assert (
         locale_from_help_url(
-            "https://www.intacct.com/ia/docs/de_DE/help_action/Intacct_basics/welcome.htm"
+            "https://help.example.com/docs/de_DE/help_action/Intacct_basics/welcome.htm"
         )
         == "de_DE"
     )
@@ -84,7 +106,7 @@ def test_edge_voices() -> None:
 
 
 def test_crawler_accepts_french_prefix(tmp_path: Path) -> None:
-    allowed = "https://www.intacct.com/ia/docs/fr_FR/help_action/"
+    allowed = "https://help.example.com/docs/fr_FR/help_action/"
     start = f"{allowed}Intacct_basics/welcome.htm"
     pages = {start: "<html><body><h1>Bienvenue</h1></body></html>"}
 

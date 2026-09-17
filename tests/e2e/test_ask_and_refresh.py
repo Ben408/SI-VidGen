@@ -22,14 +22,14 @@ class FakeRefreshService:
     def create_refresh_id(self) -> str:
         return f"refresh-{uuid4()}"
 
-    def queue(self, refresh_id: str) -> RefreshResult:
+    def queue(self, refresh_id: str, *, corpus_id: str | None = None) -> RefreshResult:
         result = RefreshResult(refresh_id=refresh_id, status="queued")
         record = self.run_store.read(refresh_id)
         record["result"] = result.model_dump(mode="json")
         self.run_store.write(refresh_id, record)
         return result
 
-    def run(self, refresh_id: str) -> RefreshResult:
+    def run(self, refresh_id: str, corpus_id: str | None = None) -> RefreshResult:
         self.gate.acquire("refresh")
         try:
             self.tracker.push(
@@ -107,7 +107,6 @@ def test_ask_returns_structured_answer_with_sources(tmp_path) -> None:
         "intake",
         "classify",
         "retrieve",
-        "retrieve_followup",
         "answer",
     ]
 

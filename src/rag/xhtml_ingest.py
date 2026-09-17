@@ -27,14 +27,22 @@ class XhtmlDocument:
 
 
 def is_allowed_help_url(url: str, allowed_prefix: str) -> bool:
-    """Enforce the authorized same-host/path crawl boundary."""
+    """Enforce the authorized same-host/path crawl boundary.
+
+    The configured prefix may be with or without a trailing slash. A start URL
+    that equals the prefix path (e.g. ``/wiki/spaces`` vs ``/wiki/spaces/``)
+    must still be accepted; descendants must be under ``prefix + "/"``.
+    """
     candidate = urlparse(url)
     allowed = urlparse(allowed_prefix)
-    return (
-        candidate.scheme in {"http", "https"}
-        and candidate.netloc == allowed.netloc
-        and candidate.path.startswith(allowed.path)
-    )
+    if candidate.scheme not in {"http", "https"} or candidate.netloc != allowed.netloc:
+        return False
+    allowed_path = (allowed.path or "/").rstrip("/") or "/"
+    candidate_path = candidate.path or "/"
+    if candidate_path.rstrip("/") == allowed_path.rstrip("/"):
+        return True
+    prefix = allowed_path if allowed_path.endswith("/") else f"{allowed_path}/"
+    return candidate_path.startswith(prefix)
 
 
 def normalize_help_url(url: str, base_url: str, allowed_prefix: str) -> str | None:

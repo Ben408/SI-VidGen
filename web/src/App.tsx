@@ -463,7 +463,7 @@ function App() {
 
   async function startCorpusRefresh() {
     const confirmed = window.confirm(
-      "Re-ingest the full Intacct Help site?\n\n" +
+      "Re-ingest the full Help corpus?\n\n" +
         "This is a lengthy process: live crawl, Chroma re-index, image library rebuild, and OKF rebuild.\n" +
         "Video drafting and product Q&A will be blocked until it finishes.\n\n" +
         "Continue?"
@@ -570,12 +570,9 @@ function App() {
     <div className="app">
       <nav className="topbar" aria-label="Primary navigation">
         <div className="nav-inner">
-          <a className="brand" href="/" aria-label="Sage Intacct video studio home">
-            <span className="sage-wordmark">Sage</span>
-            <span className="brand-divider" aria-hidden="true" />
-            <span className="intacct-wordmark">Intacct</span>
+          <a className="brand" href="/" aria-label="Knowledge Studio home">
+            Knowledge Studio
           </a>
-          <div className="product-name">Intacct Knowledge Studio</div>
           <span className="prototype-badge">Local prototype</span>
         </div>
       </nav>
@@ -584,20 +581,17 @@ function App() {
         <header className="hero">
           <div className="hero-inner">
             <div className="hero-copy">
-              <p className="eyebrow">AI-assisted authoring</p>
+              <p className="eyebrow">Local authoring</p>
               <h1>
                 {tab === "video"
                   ? "Turn support knowledge into clear, useful videos."
-                  : "Ask how to use Sage Intacct—grounded in Help."}
+                  : "Ask how-to questions—grounded in Help."}
               </h1>
               <p className="lede">
                 {tab === "video"
-                  ? "Create a review-ready video draft from a Sage Intacct support issue. Your source content stays local."
-                  : "Get accurate product-usage answers for internal staff, with live Help references and coverage diagnostics."}
+                  ? "Create a review-ready video draft from a support issue. Your source content stays local."
+                  : "Get product-usage answers for internal staff, with live Help references and coverage diagnostics."}
               </p>
-            </div>
-            <div className="hero-mark" aria-hidden="true">
-              <SparkIcon />
             </div>
           </div>
         </header>
@@ -619,7 +613,7 @@ function App() {
             className={tab === "ask" ? "active" : ""}
             onClick={() => setTab("ask")}
           >
-            Ask Intacct
+            Ask
           </button>
         </div>
 
@@ -654,8 +648,9 @@ function App() {
                 </p>
               </div>
 
-              <div className="field">
-                <label htmlFor="module">Intacct module</label>
+              {/* Kept for a future release; hidden so the brief stays simple. */}
+              <div className="field field-deferred" hidden>
+                <label htmlFor="module">Module</label>
                 <input
                   id="module"
                   value={moduleName}
@@ -1199,7 +1194,7 @@ function App() {
                   <span className="step-number">01</span>
                   <div>
                     <p className="section-kicker">Product Q&amp;A</p>
-                    <h2 id="ask-heading">What do you need to do in Intacct?</h2>
+                    <h2 id="ask-heading">What do you need to do?</h2>
                   </div>
                 </div>
                 <form onSubmit={submitAsk}>
@@ -1220,8 +1215,9 @@ function App() {
                       Goals that span multiple screens or modules are supported.
                     </p>
                   </div>
-                  <div className="field">
-                    <label htmlFor="ask-module">Intacct module</label>
+                  {/* Kept for a future release; hidden so the ask form stays simple. */}
+                  <div className="field field-deferred" hidden>
+                    <label htmlFor="ask-module">Module</label>
                     <input
                       id="ask-module"
                       value={askModule}
@@ -1342,7 +1338,7 @@ function App() {
                   <span className="step-number">02</span>
                   <div>
                     <p className="section-kicker">Answer</p>
-                    <h2>How to do it in Intacct</h2>
+                    <h2>How to do it</h2>
                   </div>
                 </div>
                 <p className="ask-summary">{ask.answer.summary}</p>
@@ -1423,7 +1419,7 @@ function App() {
 
       <footer className="studio-footer">
         <div className="footer-copy">
-          <p>Sage Intacct Knowledge Studio</p>
+          <p>Knowledge Studio</p>
           <span>Prototype · For internal review</span>
         </div>
         <div className="corpus-refresh">

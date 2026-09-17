@@ -1,0 +1,17 @@
+# Named Help corpora (one row per client/site).
+# Format: start_url, allowed_prefix, corpus_id
+# Lines starting with # are ignored. Optional header row. JSON Lines also work:
+# {"start_url":"...","allowed_prefix":"...","corpus_id":"acme-kb"}
+#
+# Copy this file to config/corpus_catalog.txt (or set CORPUS_CATALOG_PATH).
+# Ingest all rows:
+#   python -m src.rag.ingest_catalog --full
+# Ingest one row:
+#   python -m src.rag.ingest_catalog --full --corpus-id acme-kb
+#
+# Slack/API then send corpus_id on /api/ask and /api/runs.
+# Omit corpus_id to use the first catalog row (legacy data/ roots).
+
+# start_url, allowed_prefix, corpus_id
+# https://termweb.atlassian.net/wiki/spaces/TWKB/overview, https://termweb.atlassian.net/wiki/spaces/TWKB, termweb
+# https://help.example.com/docs/en_US/help_action/welcome.htm, https://help.example.com/docs/, acme-kb

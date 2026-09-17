@@ -3,11 +3,15 @@ archive/
 !.cursor/rules/
 !.cursor/rules/**
 
+# Local named-corpus catalog (copy from config/corpus_catalog.example.txt)
+config/corpus_catalog.txt
+
 # Local runtime / generated artifacts
 data/help_xhtml/
 data/help_assets/
 data/okf/
 data/vector_store/
+data/corpora/
 data/runs/*.json
 !data/runs/.gitkeep
 data/compositor_jobs/

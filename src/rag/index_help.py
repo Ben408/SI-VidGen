@@ -9,6 +9,8 @@ from config.settings import Settings, get_settings
 from src.llm.client import OllamaClient
 from src.rag.chroma_store import ChromaVectorStore
 from src.rag.chunker import chunk_cached_document
+from src.rag.corpus_catalog import help_settings_for_corpus, load_catalog, overlay_help_urls
+from src.rag.corpus_paths import resolve_corpus_paths
 from src.rag.locales import (
     HELP_LOCALES,
     cache_dir_for_locale,
@@ -40,6 +42,7 @@ def build_index(
     from_cache: bool = False,
     reset_store: bool = False,
     locales: list[str] | None = None,
+    corpus_id: str | None = None,
     settings: Settings | None = None,
     crawler: XhtmlCrawler | None = None,
     store: ChromaVectorStore | None = None,
@@ -48,12 +51,15 @@ def build_index(
     """Crawl/index one or more Help locales into the shared Chroma store.
 
     When ``crawler`` is passed (tests), behavior matches the legacy single-locale path
-    using ``settings.intacct_help_*`` / ``help_cache_dir``.
+    using ``settings.help_start_url`` / ``help_allowed_prefix`` / ``help_cache_dir``.
+    ``corpus_id`` scopes cache + vector store under ``data/corpora/{id}/``.
     """
-    settings = settings or get_settings()
+    settings = help_settings_for_corpus(settings or get_settings(), corpus_id)
+    paths = resolve_corpus_paths(settings, corpus_id)
+    paths.ensure()
     if reset_store:
-        _reset_vector_store(settings.vector_store_dir)
-    store = store or ChromaVectorStore(settings.vector_store_dir)
+        _reset_vector_store(paths.vector_store_dir)
+    store = store or ChromaVectorStore(paths.vector_store_dir)
     llm = llm or OllamaClient(
         base_url=settings.ollama_base_url,
         chat_model=settings.ollama_chat_model,
@@ -70,16 +76,17 @@ def build_index(
             store=store,
             llm=llm,
             locale="en_US",
-            cache_dir=settings.help_cache_dir,
-            start_url=settings.intacct_help_start_url,
-            allowed_prefix=settings.intacct_help_allowed_prefix,
+            cache_dir=paths.help_cache_dir,
+            start_url=settings.help_start_url,
+            allowed_prefix=settings.help_allowed_prefix,
+            vector_store_dir=paths.vector_store_dir,
         )
 
     selected = locales or parse_locales(settings.help_locales)
     combined = IndexSummary(locales=list(selected))
     for locale in selected:
-        spec = locale_spec(locale)
-        cache_dir = cache_dir_for_locale(settings.help_cache_dir, locale)
+        spec = locale_spec(locale, settings=settings)
+        cache_dir = cache_dir_for_locale(paths.help_cache_dir, locale)
         cache_dir.mkdir(parents=True, exist_ok=True)
         part = _build_index_single(
             max_pages=max_pages,
@@ -93,6 +100,7 @@ def build_index(
             cache_dir=cache_dir,
             start_url=spec.start_url,
             allowed_prefix=spec.allowed_prefix,
+            vector_store_dir=paths.vector_store_dir,
         )
         combined.pages_crawled += part.pages_crawled
         combined.pages_indexed += part.pages_indexed
@@ -128,11 +136,13 @@ def _build_index_single(
     cache_dir: Path,
     start_url: str,
     allowed_prefix: str,
+    vector_store_dir: Path | None = None,
 ) -> IndexSummary:
-    state_path = settings.vector_store_dir / f"index_state_{locale}.json"
+    store_dir = vector_store_dir or settings.vector_store_dir
+    state_path = store_dir / f"index_state_{locale}.json"
     # Keep legacy EN state filename for backward compatibility.
     if locale == "en_US":
-        legacy = settings.vector_store_dir / "index_state.json"
+        legacy = store_dir / "index_state.json"
         if legacy.is_file() and not state_path.is_file():
             state_path = legacy
     previous_state = _read_state(state_path)
@@ -334,17 +344,75 @@ def main() -> None:
         default=None,
         help="Comma list or 'all' (default: HELP_LOCALES / en_US). Example: fr_FR,de_DE,es_ES",
     )
+    parser.add_argument(
+        "--corpus-id",
+        default=None,
+        help="Optional Slack/tenant corpus id (stores under data/corpora/{id}/).",
+    )
+    parser.add_argument(
+        "--catalog",
+        nargs="?",
+        const="",
+        default=None,
+        help=(
+            "Index each row in a corpus catalog (start_url, allowed_prefix, "
+            "corpus_id). Omit the path to use CORPUS_CATALOG_PATH. Combine with "
+            "--corpus-id to ingest a single catalog row."
+        ),
+    )
     args = parser.parse_args()
     selected = parse_locales(args.locales) if args.locales else None
     if selected is None:
         # allow env default; if still en-only and user passed nothing, keep settings
         selected = None
+    max_pages = None if (args.full or args.from_cache) else args.max_pages
+    delete_stale = args.full or args.from_cache
+    if args.catalog is not None:
+        settings = get_settings()
+        catalog_file = (
+            Path(args.catalog) if args.catalog else settings.corpus_catalog_path
+        )
+        entries = load_catalog(catalog_file)
+        if args.corpus_id:
+            from src.rag.corpus_paths import normalize_corpus_id
+
+            wanted = normalize_corpus_id(args.corpus_id)
+            entries = [item for item in entries if item.corpus_id == wanted]
+            if not entries:
+                raise SystemExit(
+                    f"corpus_id {args.corpus_id!r} is not in catalog {catalog_file}"
+                )
+        if not entries:
+            raise SystemExit(f"No catalog rows in {catalog_file}")
+        reports: list[dict[str, object]] = []
+        failed = False
+        for entry in entries:
+            row_settings = overlay_help_urls(
+                settings, entry.start_url, entry.allowed_prefix
+            ).model_copy(update={"corpus_catalog_path": catalog_file})
+            summary = build_index(
+                max_pages=max_pages,
+                delete_stale=delete_stale,
+                from_cache=args.from_cache,
+                reset_store=args.reset_store,
+                locales=selected if args.locales else None,
+                corpus_id=entry.corpus_id,
+                settings=row_settings,
+            )
+            reports.append({"corpus_id": entry.corpus_id, **summary.__dict__})
+            if (args.full or args.from_cache) and not summary.complete:
+                failed = True
+        print(json.dumps(reports, indent=2))
+        if failed:
+            raise SystemExit(2)
+        return
     summary = build_index(
-        max_pages=None if (args.full or args.from_cache) else args.max_pages,
-        delete_stale=args.full or args.from_cache,
+        max_pages=max_pages,
+        delete_stale=delete_stale,
         from_cache=args.from_cache,
         reset_store=args.reset_store,
         locales=selected if args.locales else None,
+        corpus_id=args.corpus_id,
     )
     print(json.dumps(summary.__dict__, indent=2))
     if (args.full or args.from_cache) and not summary.complete:

@@ -34,11 +34,15 @@ Base path: `/api`
   "module": "General Ledger",
   "screen": null,
   "error_code": null,
-  "auto_generate": false
+  "auto_generate": false,
+  "preferred_source_ids": [],
+  "corpus_id": null
 }
 ```
 
 Raw `text` is not persisted in telemetry.
+
+Optional **`corpus_id`** (Slack tenant Help corpus): when set, retrieval / image library / OKF use `data/corpora/{corpus_id}/` instead of the legacy `data/` roots. Omit or `null` for the default corpus. Invalid ids return `INVALID_CORPUS_ID`.
 
 ## Ask Intacct
 
@@ -48,13 +52,13 @@ Raw `text` is not persisted in telemetry.
 | GET | `/ask/{ask_id}` | Result (`completed` \| `refused` \| `failed`) |
 | GET | `/ask/{ask_id}/progress` | Stage events |
 
-Same `IssueInput` body as `/runs` (module optional). Refused answers use `error_code: INSUFFICIENT_HELP_COVERAGE`.
+Same `IssueInput` body as `/runs` (module optional; **`corpus_id`** optional). Refused answers use `error_code: INSUFFICIENT_HELP_COVERAGE`.
 
 ## Corpus + OKF
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/corpus/refresh` | Start full re-ingest (`202`) |
+| POST | `/corpus/refresh` | Start full re-ingest (`202`); optional body `{ "corpus_id": "…" }` |
 | GET | `/corpus/refresh/{refresh_id}` | Refresh result |
 | GET | `/corpus/refresh/{refresh_id}/progress` | Stages: `crawl_index`, `image_library`, `okf` |
 | GET | `/okf/status` | Bundle availability + counts |
@@ -63,3 +67,24 @@ Same `IssueInput` body as `/runs` (module optional). Refused answers use `error_
 | GET | `/image-library/coverage` | Screenshot coverage stats |
 
 While refresh (or video/ask) holds the work gate, other LLM pipelines fail with `WORKSPACE_BUSY`.
+
+### Named corpora (Slack)
+
+SI-VidGen-Slack maps channels → tenants and may send `corpus_id` on Ask/runs, or point a tenant at a separate `vidgen_api_base_url` (Pattern A).
+
+**Catalog (different Help URLs per client):** copy `config/corpus_catalog.example.txt` to `config/corpus_catalog.txt` (`start_url, allowed_prefix, corpus_id` per line). Then:
+
+```powershell
+python -m src.rag.ingest_catalog --full
+python -m src.rag.index_help --full --catalog
+python -m src.rag.index_help --full --catalog --corpus-id acme-kb
+```
+
+`--corpus-id` must match a catalog row. Image library / OKF for a named store:
+
+```powershell
+python -m src.rag.build_image_library --corpus-id acme-kb
+python -m src.rag.build_okf --corpus-id acme-kb
+```
+
+Layout: `data/corpora/{corpus_id}/{help_xhtml,help_assets,okf,vector_store}/`.

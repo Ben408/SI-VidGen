@@ -71,7 +71,7 @@ class OllamaClient:
                                 {"role": "system", "content": system},
                                 {"role": "user", "content": f"{user}{repair}"},
                             ],
-                            "options": {"temperature": 0.1},
+                            "options": {"temperature": 0.0, "seed": 42},
                         },
                         timeout=self.timeout_seconds,
                     )

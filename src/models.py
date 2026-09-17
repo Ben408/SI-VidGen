@@ -17,6 +17,8 @@ class IssueInput(BaseModel):
     target_language: str | None = Field(default=None, max_length=10)
     # Mode 1 (Create from Ask): pin Ask-cited chunk ids to the front of retrieval.
     preferred_source_ids: list[str] = Field(default_factory=list, max_length=12)
+    # Slack tenant Help corpus (None = legacy default under data/).
+    corpus_id: str | None = Field(default=None, max_length=64)
 
 
 class NormalizedIssue(BaseModel):
@@ -169,6 +171,7 @@ class RunResult(BaseModel):
     okf_concepts: list[OkfConceptRef] = Field(default_factory=list)
     visual_coverage: Literal["green", "yellow", "red"] = "red"
     media_count: int = 0
+    corpus_id: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
 
@@ -200,6 +203,13 @@ class AskResult(BaseModel):
     error_detail: str | None = None
     source_language: str | None = None
     answer_language: str | None = None
+    corpus_id: str | None = None
+
+
+class CorpusRefreshRequest(BaseModel):
+    """Optional body for POST /api/corpus/refresh."""
+
+    corpus_id: str | None = Field(default=None, max_length=64)
 
 
 class RefreshResult(BaseModel):
@@ -207,5 +217,6 @@ class RefreshResult(BaseModel):
     status: Literal["queued", "processing", "completed", "failed"]
     message: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+    corpus_id: str | None = None
     error_code: str | None = None
     error_detail: str | None = None

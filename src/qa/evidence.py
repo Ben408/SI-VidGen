@@ -168,26 +168,32 @@ def token_overlap_ratio(left: set[str], right: set[str]) -> float:
 
 
 def scope_refuse_reason(question: str, classification: Classification) -> str | None:
-    """Refuse before generation when classification is weak or goal-changing."""
-    if classification.confidence < MIN_CLASSIFY_CONFIDENCE:
-        return (
-            "Not enough confidence that this is an in-scope Sage Intacct Help question "
-            f"(classification confidence {classification.confidence:.2f})."
-        )
+    """Pre-retrieval refuse is unused: Help evidence is the coverage source of truth.
 
+    Classifier confidence and rewrite quality fluctuate across identical questions.
+    Keep the helper so callers can stay unchanged; it never blocks an Ask.
+    """
+    del question, classification
+    return None
+
+
+def usable_classifier_query(question: str, classification: Classification) -> str:
+    """Return the classifier search rewrite only when it still matches the user goal."""
+    query = " ".join(classification.search_query.split()).strip()
+    if not query:
+        return ""
+    if classification.confidence < MIN_CLASSIFY_CONFIDENCE:
+        return ""
     q_tokens = tokens(question)
-    rewrite_tokens = tokens(classification.search_query)
+    rewrite_tokens = tokens(query)
     overlap = token_overlap_ratio(q_tokens, rewrite_tokens)
     if (
         classification.confidence < LOW_CONFIDENCE_FOR_REWRITE
         and overlap < MIN_REWRITE_OVERLAP
         and len(q_tokens) >= 3
     ):
-        return (
-            "The classifier rewrite does not preserve the original goal with enough "
-            "confidence to answer from Help."
-        )
-    return None
+        return ""
+    return query
 
 
 def _page_key(chunk: RetrievedChunk) -> str:
@@ -363,6 +369,25 @@ def evidence_covers_goal(question: str, selected: list[RetrievedChunk]) -> str |
     )
 
 
+def _lists_to_selected(
+    question: str,
+    lists: dict[str, list[RetrievedChunk]],
+    okf_store: OkfStore | None,
+) -> list[RetrievedChunk]:
+    if not lists:
+        return []
+    fused = fuse_rankings(lists)
+    # Enrich before boosts so procedure text / section assets can influence selection.
+    id_order = list(fused.keys())
+    enriched = enrich_retrieved_with_okf(
+        [fused[source_id].chunk for source_id in id_order],
+        okf_store,
+    )
+    for source_id, chunk in zip(id_order, enriched, strict=True):
+        fused[source_id].chunk = chunk
+    return select_coherent_pages(question, fused)
+
+
 def retrieve_and_select_evidence(
     llm: StructuredLLM,
     vector_store: VectorStore,
@@ -374,7 +399,11 @@ def retrieve_and_select_evidence(
     help_language: str,
     plan_followups,
 ) -> tuple[list[RetrievedChunk], list[str]]:
-    """Retrieve with provenance, fuse ranks, enrich, then pick a coherent page set."""
+    """Retrieve with provenance, fuse ranks, enrich, then pick a coherent page set.
+
+    Stage extra LLM queries only when the original question does not already
+    cover the goal, so identical asks do not flip coverage via follow-ups.
+    """
     lists: dict[str, list[RetrievedChunk]] = {}
     original = _retrieve_one(
         question,
@@ -385,6 +414,10 @@ def retrieve_and_select_evidence(
     )
     if original:
         lists["original"] = original
+
+    selected = _lists_to_selected(question, lists, okf_store)
+    if selected and evidence_covers_goal(question, selected) is None:
+        return selected, []
 
     classifier_q = " ".join(classification_query.split()).strip()
     if classifier_q and classifier_q.lower() != question.strip().lower():
@@ -408,6 +441,10 @@ def retrieve_and_select_evidence(
         if classified:
             lists["classifier"] = classified
 
+    selected = _lists_to_selected(question, lists, okf_store)
+    if selected and evidence_covers_goal(question, selected) is None:
+        return selected, []
+
     seed = lists.get("original") or lists.get("classifier") or []
     follow_ups = plan_followups(
         llm,
@@ -430,15 +467,5 @@ def retrieve_and_select_evidence(
     if not lists:
         return [], follow_ups
 
-    fused = fuse_rankings(lists)
-    # Enrich before boosts so procedure text / section assets can influence selection.
-    id_order = list(fused.keys())
-    enriched = enrich_retrieved_with_okf(
-        [fused[source_id].chunk for source_id in id_order],
-        okf_store,
-    )
-    for source_id, chunk in zip(id_order, enriched, strict=True):
-        fused[source_id].chunk = chunk
-
-    selected = select_coherent_pages(question, fused)
+    selected = _lists_to_selected(question, lists, okf_store)
     return selected, follow_ups

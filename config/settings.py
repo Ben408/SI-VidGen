@@ -20,15 +20,15 @@ class Settings(BaseSettings):
     rag_top_k: int = 6
     rag_min_score: float = 0.2
 
-    intacct_help_start_url: str = (
-        "https://www.intacct.com/ia/docs/en_US/help_action/Intacct_basics/welcome.htm"
-    )
-    intacct_help_allowed_prefix: str = (
-        "https://www.intacct.com/ia/docs/en_US/help_action/"
-    )
+    # Crawl start/prefix: filled from config/corpus_catalog.txt (not .env).
+    # Tests may set these directly. Named corpus_id overlays the matching row.
+    help_start_url: str = ""
+    help_allowed_prefix: str = ""
     # Crawl/index locales: "en_US" (default) or "all" / "en_US,fr_FR,de_DE,es_ES"
     help_locales: str = "en_US"
     crawl_delay_seconds: float = 0.25
+    # Catalog of named corpora (start_url, allowed_prefix, corpus_id).
+    corpus_catalog_path: Path = Path("config/corpus_catalog.txt")
 
     data_dir: Path = Path("data")
     help_cache_dir: Path = Path("data/help_xhtml")

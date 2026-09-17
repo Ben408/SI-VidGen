@@ -5,8 +5,8 @@
   color: #1b1b1b;
   background: #f5f5f3;
   font-synthesis: none;
-  --sage-green: #00d639;
-  --sage-green-dark: #00a932;
+  --sage-green: #0f766e;
+  --sage-green-dark: #0d5f59;
   --ink: #101010;
   --muted: #5e5e5a;
   --line: #d9d9d5;
@@ -67,35 +67,11 @@ p {
 .brand {
   display: flex;
   align-items: center;
-  color: inherit;
+  color: #f2f2ee;
   text-decoration: none;
-}
-
-.sage-wordmark {
-  color: var(--sage-green);
-  font-size: 1.9rem;
-  font-weight: 500;
-  letter-spacing: -0.09em;
-}
-
-.brand-divider {
-  width: 1px;
-  height: 28px;
-  margin: 0 18px;
-  background: #50504d;
-}
-
-.intacct-wordmark {
-  font-size: 1.12rem;
+  font-size: 1.05rem;
   font-weight: 650;
-}
-
-.product-name {
-  margin-left: 28px;
-  padding-left: 28px;
-  border-left: 1px solid #50504d;
-  color: #d8d8d4;
-  font-size: 0.92rem;
+  letter-spacing: -0.02em;
 }
 
 .prototype-badge {
@@ -112,20 +88,8 @@ p {
 
 .hero {
   position: relative;
-  overflow: hidden;
   color: #fff;
   background: var(--ink);
-}
-
-.hero::after {
-  position: absolute;
-  right: -140px;
-  bottom: -330px;
-  width: 620px;
-  height: 620px;
-  border: 1px solid #31312f;
-  border-radius: 50%;
-  content: "";
 }
 
 .hero-inner {
@@ -133,12 +97,14 @@ p {
   z-index: 1;
   display: flex;
   width: min(1180px, calc(100% - 48px));
-  min-height: 390px;
+  min-height: 280px;
   margin: 0 auto;
-  padding: 72px 0 96px;
+  padding: 56px 0 72px;
   align-items: center;
-  justify-content: space-between;
-  gap: 72px;
+}
+
+.field-deferred {
+  display: none;
 }
 
 .hero-copy {
@@ -150,7 +116,7 @@ p {
   margin-bottom: 22px;
   align-items: center;
   gap: 10px;
-  color: var(--sage-green);
+  color: #c8c8c4;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -160,17 +126,17 @@ p {
 .eyebrow::before {
   width: 28px;
   height: 2px;
-  background: var(--sage-green);
+  background: #8a8a86;
   content: "";
 }
 
 h1 {
   max-width: 830px;
   margin-bottom: 24px;
-  font-size: clamp(2.8rem, 5.7vw, 5rem);
+  font-size: clamp(2.4rem, 5vw, 4.2rem);
   font-weight: 650;
   letter-spacing: -0.055em;
-  line-height: 0.99;
+  line-height: 1.02;
 }
 
 .lede {
@@ -179,22 +145,6 @@ h1 {
   color: #c8c8c4;
   font-size: clamp(1rem, 2vw, 1.18rem);
   line-height: 1.6;
-}
-
-.hero-mark {
-  display: grid;
-  width: 144px;
-  height: 144px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--ink);
-  background: var(--sage-green);
-}
-
-.hero-mark svg {
-  width: 62px;
-  fill: currentColor;
 }
 
 .workspace {
@@ -283,7 +233,7 @@ h1 {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 50%;
-  color: var(--ink);
+  color: #fff;
   background: var(--sage-green);
   font-size: 0.78rem;
   font-weight: 750;
@@ -383,7 +333,7 @@ input {
   border: 0;
   border-radius: 0;
   padding: 12px 20px;
-  color: var(--ink);
+  color: #fff;
   background: var(--sage-green);
   font-weight: 700;
   text-decoration: none;
@@ -400,7 +350,7 @@ input {
 
 .primary-action:hover,
 .download:hover {
-  background: #2bea54;
+  background: var(--sage-green-dark);
   transform: translateY(-1px);
 }
 
@@ -500,7 +450,7 @@ button:disabled {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 50%;
-  color: var(--ink);
+  color: #fff;
   background: var(--sage-green);
   font-size: 0.75rem;
   font-weight: 800;
@@ -1109,19 +1059,6 @@ footer p,
     grid-template-columns: 1fr;
   }
 
-  .product-name {
-    display: none;
-  }
-
-  .hero-mark {
-    width: 100px;
-    height: 100px;
-  }
-
-  .hero-mark svg {
-    width: 46px;
-  }
-
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -1148,30 +1085,17 @@ footer p,
     width: min(100% - 32px, 1180px);
   }
 
-  .sage-wordmark {
-    font-size: 1.65rem;
-  }
-
-  .brand-divider {
-    height: 24px;
-    margin: 0 12px;
-  }
-
   .prototype-badge {
     display: none;
   }
 
   .hero-inner {
-    min-height: 330px;
-    padding: 52px 0 82px;
+    min-height: 240px;
+    padding: 40px 0 64px;
   }
 
   h1 {
-    font-size: clamp(2.45rem, 13vw, 3.5rem);
-  }
-
-  .hero-mark {
-    display: none;
+    font-size: clamp(2.1rem, 11vw, 3rem);
   }
 
   .form-panel,

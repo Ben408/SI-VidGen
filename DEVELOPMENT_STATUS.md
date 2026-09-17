@@ -4,9 +4,9 @@ Living status for **SI VidGen / Intacct Knowledge Studio**.
 
 | Field | Value |
 |---|---|
-| **Last updated** | 2026-08-31 |
+| **Last updated** | 2026-09-15 |
 | **Current phase** | Knowledge Studio + Slack/Hermes T1 UAT; **LDW Phase 1 core** (sibling); T2/T3 in parallel |
-| **Overall status** | English Ask / script / video work; Slack channel-default T1; Hermes Slack path is skill-only (no LLM chat fallback) |
+| **Overall status** | English Ask / script / video work; Slack channel-default T1; Hermes Slack path is skill-only (no LLM chat fallback); **`corpus_id` multi-corpus** on Ask/runs |
 | **Prototype posture** | Local venv · Ollama · React+FastAPI · Chroma · OKF · Help image library · work gate |
 | **Chat model (this app)** | **`gemma3:12b`** via Ollama — **not** Qwen |
 | **Primary users** | Information developers, project managers, internal Sage staff (Ask) |
@@ -33,6 +33,8 @@ Shared host: `OLLAMA_MODELS=F:\OllamaModels` (preferred). Do not delete the C: O
 
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-09-15 | **Corpus catalog** (`config/corpus_catalog.txt`: start URL, allowed prefix, `corpus_id`) for multi-client Help ingest. Ask/refresh overlay that row’s URLs (first row = default corpus). | One process, several Help sites; Slack still sends `corpus_id`. |
+| 2026-09-10 | **`corpus_id` on Ask/runs/refresh** — named corpora under `data/corpora/{id}/`; aligns with SI-VidGen-Slack tenant `help.corpus_id` (or per-tenant `vidgen_api_base_url`). | Slack multi-client Help isolation without copying Slack code into this repo. |
 | 2026-08-06 | **Ask localization router (latency-bounded):** Help gate + optional Phrase TM + translategemma; Termweb off Ask critical path; Microsoft MT = T3 skill. Benchmarks in Hermes `docs/benchmarks.md`. | Slack conversation feel; baseline localize-ask was ~22s with Termweb. |
 | 2026-08-06 | **Disable Slack `/hermes` → `hermes chat -q` LLM fallback.** Unrouted prompts: out-of-bounds, Ask Intacct redirect, or tip. | `/hermes` is **stateless**; chat caused multi-minute waits and fake tool narration. |
 | 2026-08-06 | Non-English Ask: if localized Help refuse/miss, **retry grounding on English Help** while answering in the user language. Refuse UX: do not imply weak retrieval hits are the answer. | DE GAAP ask detected `de_DE` but retrieved off-topic DE pages → refuse + contradictory Help list; EN Help has strong GAAP topics. |
@@ -50,6 +52,7 @@ Shared host: `OLLAMA_MODELS=F:\OllamaModels` (preferred). Do not delete the C: O
 - Tabbed UI: **Create video** · **Ask Intacct**
 - Footer **Re-ingest Help** (crawl → Chroma → images → OKF)
 - Multi-locale crawl hooks (`HELP_LOCALES` / `--locales`) + locale video guards
+- Corpus catalog (`config/corpus_catalog.txt`) + `python -m src.rag.ingest_catalog`
 - Work gate blocks overlapping LLM-heavy jobs
 - Review/edit/approve video scripts; optional Higgsfield backend
 - CI: ruff + pytest + web lint/build
@@ -83,6 +86,9 @@ Shared host: `OLLAMA_MODELS=F:\OllamaModels` (preferred). Do not delete the C: O
 
 | Date | Change |
 |---|---|
+| 2026-09-16 | Help crawl URLs live only in `config/corpus_catalog.txt` (removed `INTACCT_HELP_*` from `.env`) |
+| 2026-09-15 | Corpus catalog file + `python -m src.rag.ingest_catalog`; Ask/refresh use per-`corpus_id` Help URLs |
+| 2026-09-10 | Accept Slack `corpus_id` on Ask/runs/refresh; isolate Chroma/Help/OKF under `data/corpora/{id}/` |
 | 2026-08-31 | Sibling **TMXmatic Phase 2**: Okapi registry, Docker runner, submit-upload/job poll API, GUI panel |
 | 2026-08-06 | Slack `/hermes`: no LLM chat fallback; OOB refuse; GAAP/Intacct → Ask redirect (see Major decisions) |
 | 2026-08-04 | Ask scrub non-Help URLs + source_id hashes from free text |

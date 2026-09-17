@@ -40,11 +40,20 @@ def main() -> int:
         action="store_true",
         help="Do not read help_assets catalog for local_path / usable flags",
     )
+    parser.add_argument(
+        "--corpus-id",
+        default=None,
+        help="Optional Slack/tenant corpus id (data/corpora/{id}/).",
+    )
     args = parser.parse_args()
     settings = get_settings()
-    cache_dir = Path(args.cache_dir) if args.cache_dir else settings.help_cache_dir
-    okf_dir = Path(args.okf_dir) if args.okf_dir else settings.okf_dir
-    library_dir = None if args.no_library else settings.help_assets_dir
+    from src.rag.corpus_paths import resolve_corpus_paths
+
+    paths = resolve_corpus_paths(settings, args.corpus_id)
+    paths.ensure()
+    cache_dir = Path(args.cache_dir) if args.cache_dir else paths.help_cache_dir
+    okf_dir = Path(args.okf_dir) if args.okf_dir else paths.okf_dir
+    library_dir = None if args.no_library else paths.help_assets_dir
 
     summary = convert_xhtml_cache_to_okf(
         cache_dir,

@@ -21,11 +21,14 @@ If `npm install` fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, export Windows ro
 ## Build local knowledge assets
 
 ```powershell
-# Safe 10-page index (dev)
+# Safe 10-page index (dev; first catalog row → data/ roots)
 python -m src.rag.index_help
 
 # Full crawl + stale cleanup
 python -m src.rag.index_help --full
+
+# Several Help sites (copy config/corpus_catalog.example.txt → config/corpus_catalog.txt)
+python -m src.rag.ingest_catalog --full
 
 # Screenshot library
 python -m src.rag.build_image_library

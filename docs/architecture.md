@@ -11,6 +11,7 @@
 - **Video:** default **local compositor** MP4; optional Higgsfield
 - **Concurrency:** `WorkGate` serializes video / ask / corpus refresh on the local GPU/LLM
 - **Telemetry:** metadata-only JSON under `data/runs/`
+- **Multi-corpus:** optional `corpus_id` on Ask/runs/refresh → `data/corpora/{id}/` (Slack tenant contract). `config/corpus_catalog.txt` maps each id to crawl `start_url` + `allowed_prefix`.
 
 ## Knowledge path
 

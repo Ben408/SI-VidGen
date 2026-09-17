@@ -36,6 +36,8 @@ def test_structured_generation_falls_back_after_invalid_primary(monkeypatch) -> 
         payload = kwargs["json"]
         assert isinstance(payload, dict)
         assert "$defs" not in payload["format"]
+        assert payload["options"]["temperature"] == 0.0
+        assert payload["options"]["seed"] == 42
         model = str(payload["model"])
         calls.append(model)
         content = "not-json" if model == "primary" else '{"answer":"valid"}'

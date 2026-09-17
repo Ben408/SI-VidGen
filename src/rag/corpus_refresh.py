@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from config.settings import Settings
 from src.models import RefreshResult
+from src.rag.corpus_catalog import help_settings_for_corpus
+from src.rag.corpus_paths import resolve_corpus_paths
 from src.rag.image_library import build_image_library
 from src.rag.index_help import build_index
 from src.rag.locales import assets_dir_for_locale, cache_dir_for_locale, parse_locales
@@ -34,21 +36,40 @@ class CorpusRefreshService:
     def create_refresh_id(self) -> str:
         return f"refresh-{uuid4()}"
 
-    def queue(self, refresh_id: str) -> RefreshResult:
-        result = RefreshResult(refresh_id=refresh_id, status="queued")
+    def queue(
+        self, refresh_id: str, *, corpus_id: str | None = None
+    ) -> RefreshResult:
+        result = RefreshResult(
+            refresh_id=refresh_id, status="queued", corpus_id=corpus_id
+        )
         self._write_result(result)
         return result
 
-    def run(self, refresh_id: str) -> RefreshResult:
+    def run(self, refresh_id: str, corpus_id: str | None = None) -> RefreshResult:
         with self._lock:
-            return self._run_locked(refresh_id)
+            return self._run_locked(refresh_id, corpus_id)
 
     def get_result(self, refresh_id: str) -> RefreshResult | None:
         record = self.run_store.read(refresh_id)
         result = record.get("result")
         return RefreshResult.model_validate(result) if result else None
 
-    def _run_locked(self, refresh_id: str) -> RefreshResult:
+    def _run_locked(
+        self, refresh_id: str, corpus_id: str | None = None
+    ) -> RefreshResult:
+        try:
+            paths = resolve_corpus_paths(self.settings, corpus_id)
+        except ValueError as error:
+            result = RefreshResult(
+                refresh_id=refresh_id,
+                status="failed",
+                error_code="INVALID_CORPUS_ID",
+                error_detail=str(error),
+                corpus_id=corpus_id,
+            )
+            self._write_result(result)
+            return result
+
         try:
             self.gate.acquire("refresh")
         except BusyError as error:
@@ -57,19 +78,33 @@ class CorpusRefreshService:
                 status="failed",
                 error_code="WORKSPACE_BUSY",
                 error_detail=str(error),
+                corpus_id=paths.corpus_id,
             )
             self._write_result(result)
             return result
 
-        self._write_result(RefreshResult(refresh_id=refresh_id, status="processing"))
-        log_event("refresh_started", run_id=refresh_id)
-        details: dict[str, object] = {}
+        paths.ensure()
+        crawl_settings = help_settings_for_corpus(self.settings, paths.corpus_id)
+        self._write_result(
+            RefreshResult(
+                refresh_id=refresh_id,
+                status="processing",
+                corpus_id=paths.corpus_id,
+            )
+        )
+        log_event("refresh_started", run_id=refresh_id, corpus_id=paths.corpus_id)
+        details: dict[str, object] = {
+            "corpus_id": paths.corpus_id,
+            "start_url": crawl_settings.help_start_url,
+            "allowed_prefix": crawl_settings.help_allowed_prefix,
+        }
         try:
             with stage(refresh_id, "crawl_index", self.tracker):
                 index_summary = build_index(
                     max_pages=None,
                     delete_stale=True,
-                    settings=self.settings,
+                    settings=crawl_settings,
+                    corpus_id=paths.corpus_id,
                 )
                 details["index"] = {
                     "pages_crawled": index_summary.pages_crawled,
@@ -96,8 +131,8 @@ class CorpusRefreshService:
                 locales = parse_locales(self.settings.help_locales)
                 library_reports: list[dict[str, object]] = []
                 for locale in locales:
-                    cache_dir = cache_dir_for_locale(self.settings.help_cache_dir, locale)
-                    library_dir = assets_dir_for_locale(self.settings.help_assets_dir, locale)
+                    cache_dir = cache_dir_for_locale(paths.help_cache_dir, locale)
+                    library_dir = assets_dir_for_locale(paths.help_assets_dir, locale)
                     if not (cache_dir / "manifest.json").is_file():
                         continue
                     library_dir.mkdir(parents=True, exist_ok=True)
@@ -119,11 +154,11 @@ class CorpusRefreshService:
                 details["image_library"] = {"locales": library_reports}
 
             with stage(refresh_id, "okf", self.tracker):
-                okf_cache = cache_dir_for_locale(self.settings.help_cache_dir, "en_US")
-                okf_library = assets_dir_for_locale(self.settings.help_assets_dir, "en_US")
+                okf_cache = cache_dir_for_locale(paths.help_cache_dir, "en_US")
+                okf_library = assets_dir_for_locale(paths.help_assets_dir, "en_US")
                 okf_summary = convert_xhtml_cache_to_okf(
                     okf_cache,
-                    self.settings.okf_dir,
+                    paths.okf_dir,
                     library_dir=okf_library,
                 )
                 details["okf"] = {
@@ -144,9 +179,10 @@ class CorpusRefreshService:
                     "now use the updated local assets."
                 ),
                 details=details,
+                corpus_id=paths.corpus_id,
             )
             self._write_result(result)
-            log_event("refresh_completed", run_id=refresh_id)
+            log_event("refresh_completed", run_id=refresh_id, corpus_id=paths.corpus_id)
             return result
         except Exception as exc:
             error_code = f"REFRESH_{type(exc).__name__.upper()}"
@@ -155,6 +191,7 @@ class CorpusRefreshService:
                 status="failed",
                 message="Help corpus refresh failed.",
                 details=details,
+                corpus_id=paths.corpus_id,
                 error_code=error_code,
                 error_detail=str(exc)[:500],
             )

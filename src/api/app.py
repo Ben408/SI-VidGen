@@ -8,6 +8,7 @@ from config.settings import Settings, get_settings
 from src.llm.client import OllamaClient
 from src.models import (
     AskResult,
+    CorpusRefreshRequest,
     IssueInput,
     ProgressEvent,
     RefreshResult,
@@ -106,7 +107,7 @@ def create_app(
     @app.post("/api/ask", status_code=202)
     def create_ask(issue: IssueInput, background_tasks: BackgroundTasks) -> AskResult:
         ask_id = ask.create_ask_id()
-        queued = ask.queue(ask_id)
+        queued = ask.queue(ask_id, corpus_id=issue.corpus_id)
         background_tasks.add_task(ask.run, ask_id, issue)
         return queued
 
@@ -125,10 +126,14 @@ def create_app(
         return [ProgressEvent.model_validate(item) for item in record.get("events", [])]
 
     @app.post("/api/corpus/refresh", status_code=202)
-    def start_corpus_refresh(background_tasks: BackgroundTasks) -> RefreshResult:
+    def start_corpus_refresh(
+        background_tasks: BackgroundTasks,
+        body: CorpusRefreshRequest | None = None,
+    ) -> RefreshResult:
+        corpus_id = body.corpus_id if body is not None else None
         refresh_id = refresh.create_refresh_id()
-        queued = refresh.queue(refresh_id)
-        background_tasks.add_task(refresh.run, refresh_id)
+        queued = refresh.queue(refresh_id, corpus_id=corpus_id)
+        background_tasks.add_task(refresh.run, refresh_id, corpus_id)
         return queued
 
     @app.get("/api/corpus/refresh/{refresh_id}", response_model=RefreshResult)
@@ -148,7 +153,9 @@ def create_app(
     @app.post("/api/runs", status_code=202)
     def create_run(issue: IssueInput, background_tasks: BackgroundTasks) -> RunResult:
         run_id = orchestrator.create_run_id()
-        queued = orchestrator.queue(run_id, auto_generate=issue.auto_generate)
+        queued = orchestrator.queue(
+            run_id, auto_generate=issue.auto_generate, corpus_id=issue.corpus_id
+        )
         background_tasks.add_task(orchestrator.run, run_id, issue)
         return queued
 

@@ -48,4 +48,6 @@ If Help coverage is weak, the system **refuses** with a coverage gap message—t
 2. Wait for stages: crawl/index → image library → OKF.
 3. On success, video and Ask use the updated corpus.
 
+Named Help sites: edit `config/corpus_catalog.txt` (`start_url, allowed_prefix, corpus_id`) and run `python -m src.rag.ingest_catalog --full`. Slack/API must send that `corpus_id`. Footer refresh without a body uses the first catalog row (legacy `data/` roots).
+
 Do not start video or Ask while refresh is running.

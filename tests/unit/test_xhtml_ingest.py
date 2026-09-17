@@ -7,6 +7,21 @@ from src.rag.xhtml_ingest import XhtmlCrawler, extract_scoped_links, is_allowed_
 ALLOWED = "https://www.intacct.com/ia/docs/en_US/help_action/"
 
 
+def test_allows_prefix_without_trailing_slash_match() -> None:
+    """Start URL equal to prefix path must pass even if prefix has a trailing slash."""
+    prefix = "https://termweb.atlassian.net/wiki/spaces/"
+    start = "https://termweb.atlassian.net/wiki/spaces"
+    assert is_allowed_help_url(start, prefix)
+    assert is_allowed_help_url(
+        "https://termweb.atlassian.net/wiki/spaces/TWKB/overview",
+        prefix,
+    )
+    assert not is_allowed_help_url(
+        "https://termweb.atlassian.net/wiki/spaceship",
+        prefix,
+    )
+
+
 def test_allows_scoped_help_url() -> None:
     assert is_allowed_help_url(
         "https://www.intacct.com/ia/docs/en_US/help_action/General_Ledger/topic.htm",

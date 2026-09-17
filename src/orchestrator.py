@@ -23,6 +23,7 @@ from src.rag.asset_binding import (
     visual_coverage,
 )
 from src.rag.chroma_store import ChromaVectorStore
+from src.rag.corpus_paths import normalize_corpus_id, resolve_corpus_paths
 from src.rag.image_library import HelpImageLibrary
 from src.rag.locales import assets_dir_for_locale, normalize_answer_language
 from src.rag.okf.enrich import enrich_retrieved_with_okf, related_concepts_for_sources
@@ -77,30 +78,60 @@ class Orchestrator:
             "catalog.json"
         ).is_file():
             self.image_library = HelpImageLibrary(settings.help_assets_dir)
-            self._image_libraries["en_US"] = self.image_library
+            self._image_libraries["default:en_US"] = self.image_library
         self.okf_store = okf_store
         if self.okf_store is None and settings.okf_dir.joinpath("catalog.json").is_file():
             self.okf_store = OkfStore(settings.okf_dir)
+        self._corpus_vector_stores: dict[str, VectorStore] = {"": self.vector_store}
+        self._corpus_okf_stores: dict[str, OkfStore | None] = {"": self.okf_store}
         self._pipeline_lock = Lock()
 
-    def library_for_locale(self, locale: str) -> HelpImageLibrary | None:
-        if locale in self._image_libraries:
-            return self._image_libraries[locale]
-        path = assets_dir_for_locale(self.settings.help_assets_dir, locale)
+    def _resources_for_corpus(
+        self, corpus_id: str | None
+    ) -> tuple[str | None, VectorStore, OkfStore | None]:
+        cid = normalize_corpus_id(corpus_id)
+        key = cid or ""
+        if key in self._corpus_vector_stores:
+            return cid, self._corpus_vector_stores[key], self._corpus_okf_stores[key]
+        paths = resolve_corpus_paths(self.settings, cid)
+        paths.ensure()
+        store = ChromaVectorStore(paths.vector_store_dir)
+        okf = (
+            OkfStore(paths.okf_dir)
+            if paths.okf_dir.joinpath("catalog.json").is_file()
+            else None
+        )
+        self._corpus_vector_stores[key] = store
+        self._corpus_okf_stores[key] = okf
+        return cid, store, okf
+
+    def library_for_locale(
+        self, locale: str, corpus_id: str | None = None
+    ) -> HelpImageLibrary | None:
+        paths = resolve_corpus_paths(self.settings, corpus_id)
+        cache_key = f"{paths.corpus_id or 'default'}:{locale}"
+        if cache_key in self._image_libraries:
+            return self._image_libraries[cache_key]
+        path = assets_dir_for_locale(paths.help_assets_dir, locale)
         if not path.joinpath("catalog.json").is_file():
-            return self.image_library if locale == "en_US" else None
+            if locale == "en_US" and paths.corpus_id is None:
+                return self.image_library
+            return None
         library = HelpImageLibrary(path)
-        self._image_libraries[locale] = library
+        self._image_libraries[cache_key] = library
         return library
 
     def create_run_id(self) -> str:
         return f"run-{uuid4()}"
 
-    def queue(self, run_id: str, auto_generate: bool = False) -> RunResult:
+    def queue(
+        self, run_id: str, auto_generate: bool = False, *, corpus_id: str | None = None
+    ) -> RunResult:
         result = RunResult(
             run_id=run_id,
             status="queued",
             auto_generate=auto_generate,
+            corpus_id=corpus_id,
         )
         self._write_result(result)
         return result
@@ -112,6 +143,21 @@ class Orchestrator:
 
     def _run_locked(self, run_id: str, issue_input: IssueInput) -> RunResult:
         try:
+            corpus_id, vector_store, okf_store = self._resources_for_corpus(
+                issue_input.corpus_id
+            )
+        except ValueError as error:
+            result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code="INVALID_CORPUS_ID",
+                error_detail=str(error),
+                corpus_id=issue_input.corpus_id,
+            )
+            self._write_result(result)
+            return result
+
+        try:
             self.work_gate.acquire("video")
         except BusyError as error:
             result = RunResult(
@@ -119,11 +165,12 @@ class Orchestrator:
                 status="failed",
                 error_code="WORKSPACE_BUSY",
                 error_detail=str(error),
+                corpus_id=corpus_id,
             )
             self._write_result(result)
             return result
-        self._write_status(run_id, "processing")
-        log_event("run_started", run_id=run_id)
+        self._write_status(run_id, "processing", corpus_id=corpus_id)
+        log_event("run_started", run_id=run_id, corpus_id=corpus_id)
         try:
             with stage(run_id, "intake", self.tracker):
                 issue = normalize_issue(issue_input)
@@ -146,15 +193,17 @@ class Orchestrator:
             with stage(run_id, "retrieve", self.tracker):
                 retrieved = retrieve_help_content(
                     classification.search_query,
-                    self.vector_store,
+                    vector_store,
                     self.llm,
                     top_k=self.settings.rag_top_k,
                     min_score=self.settings.rag_min_score,
                     language=target_language,
                 )
                 # OKF first (procedure text + section assets), then library filter.
-                retrieved = enrich_retrieved_with_okf(retrieved, self.okf_store)
-                locale_library = self.library_for_locale(target_language)
+                retrieved = enrich_retrieved_with_okf(retrieved, okf_store)
+                locale_library = self.library_for_locale(
+                    target_language, corpus_id=corpus_id
+                )
                 retrieved = filter_retrieved_to_library(
                     retrieved,
                     locale_library,
@@ -186,7 +235,7 @@ class Orchestrator:
                 OkfConceptRef.model_validate(item)
                 for item in related_concepts_for_sources(
                     script.sources,
-                    self.okf_store,
+                    okf_store,
                 )
             ]
             result = RunResult(
@@ -203,6 +252,7 @@ class Orchestrator:
                 okf_concepts=okf_concepts,
                 visual_coverage=coverage,
                 media_count=media_count,
+                corpus_id=corpus_id,
             )
             self._write_result(result)
             if issue_input.auto_generate:
@@ -225,6 +275,7 @@ class Orchestrator:
                 status="failed",
                 error_code=error_code,
                 error_detail=str(exc)[:500],
+                corpus_id=corpus_id,
             )
             self._write_result(result)
             log_event(
@@ -540,9 +591,13 @@ class Orchestrator:
                     "Edited scene added an asset not present in the grounded script"
                 )
 
-    def _write_status(self, run_id: str, status: str) -> None:
+    def _write_status(
+        self, run_id: str, status: str, *, corpus_id: str | None = None
+    ) -> None:
         record = self.run_store.read(run_id)
-        record["result"] = RunResult(run_id=run_id, status=status).model_dump(mode="json")
+        record["result"] = RunResult(
+            run_id=run_id, status=status, corpus_id=corpus_id
+        ).model_dump(mode="json")
         self.run_store.write(run_id, record)
 
     def _write_result(self, result: RunResult) -> None:
